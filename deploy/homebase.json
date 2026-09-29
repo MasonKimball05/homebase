@@ -1,6 +1,11 @@
 {
   "listen": "0.0.0.0:8090",
   "log_dir": "logs",
+  "alerts": {
+    "env_file": "C:\\Users\\Admin\\apps\\homebase\\homebase.env",
+    "dashboard_url": "http://arkans-pc1:8090/",
+    "startup_summary": true
+  },
   "apps": [
     {
       "name": "jobtracker",

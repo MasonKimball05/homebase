@@ -72,3 +72,32 @@ func TestEnvFileErrorsDontLeakSecrets(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+func TestNtfyURLPrecedenceAndValidation(t *testing.T) {
+	dir := t.TempDir()
+	envFile := filepath.Join(dir, "homebase.env")
+	os.WriteFile(envFile, []byte("NTFY_URL=https://ntfy.sh/from-file\n"), 0o600)
+
+	a := Alerts{NtfyURL: "https://ntfy.sh/from-config", EnvFile: envFile}
+	if got, _ := a.ResolveNtfyURL(); got != "https://ntfy.sh/from-file" {
+		t.Errorf("env file should beat config, got %q", got)
+	}
+	t.Setenv("HOMEBASE_NTFY_URL", "https://ntfy.sh/from-env")
+	if got, _ := a.ResolveNtfyURL(); got != "https://ntfy.sh/from-env" {
+		t.Errorf("env var should win, got %q", got)
+	}
+
+	t.Setenv("HOMEBASE_NTFY_URL", "")
+	if got, err := (Alerts{}).ResolveNtfyURL(); got != "" || err != nil {
+		t.Errorf("unset should mean off: %q %v", got, err)
+	}
+	if got, err := (Alerts{NtfyURL: "http://127.0.0.1:2586/topic"}).ResolveNtfyURL(); err != nil || got == "" {
+		t.Errorf("self-hosted ntfy on localhost should be allowed over http: %v", err)
+	}
+	for _, bad := range []string{"http://ntfy.sh/secret-topic", "https://ntfy.sh/", "ntfy.sh/secret-topic"} {
+		_, err := (Alerts{NtfyURL: bad}).ResolveNtfyURL()
+		if err == nil || strings.Contains(err.Error(), "secret-topic") {
+			t.Errorf("%q: err = %v", bad, err)
+		}
+	}
+}

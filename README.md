@@ -28,6 +28,9 @@ Written in Go with the standard library only: one `.exe`, no runtime to install.
 - **Never duplicates an app:** if something is already answering on an app's
   health URL (say, the old startup task), homebase reports it as *External*
   instead of starting a second copy that would fail on "port in use".
+- **Phone alerts** through [ntfy](https://ntfy.sh): a crash loop, an app that
+  crashed for good, or failing health checks, then a follow-up when it
+  recovers. Optionally a morning "desktop is up: 2/2 apps running" check-in.
 - **Leaves no orphans:** every app is placed in a Windows
   [Job Object](https://learn.microsoft.com/windows/win32/procthread/job-objects)
   that closes with homebase, so even if homebase is force-killed, Windows ends
@@ -75,6 +78,43 @@ schtasks /End /TN homebase; schtasks /Run /TN homebase
  Unknown keys are rejected, so typos fail loudly
 instead of being silently ignored. The desktop's real config is in
 [`deploy/homebase.json`](deploy/homebase.json).
+
+## Phone alerts
+
+| Event | When | Priority |
+|---|---|---|
+| Crash loop | 3+ restarts within 10 minutes (configurable) | urgent |
+| Crashed | exited and its restart policy says don't restart | urgent |
+| Unhealthy | running, but the health check failed 3 times in a row | high |
+| Recovered | an app you were alerted about is healthy again (a crash-looper must stay up for 2 min) | normal |
+| Startup summary | about a minute after homebase starts, if `startup_summary` is on | low |
+
+Deliberately quiet: a single crash that recovers on its own, apps you stopped
+yourself, and states in transition (starting, stopping) don't notify.
+Problems found at the same moment arrive as one notification, tapping it opens
+the dashboard, and if the network isn't up yet (right after boot) delivery is
+retried.
+
+Setup:
+1. Install the ntfy app on your phone and subscribe to a topic with a long
+   random name. Anyone who guesses it can read your alerts.
+2. On the desktop, create `C:\Users\Admin\apps\homebase\homebase.env`
+   (see [`deploy/homebase.env.example`](deploy/homebase.env.example)) containing
+   `NTFY_URL=https://ntfy.sh/<your-topic>`.
+3. Test it: `homebase.exe -test-alert -config homebase.json`
+
+```jsonc
+"alerts": {
+  "env_file": "C:\\Users\\Admin\\apps\\homebase\\homebase.env",  // holds NTFY_URL (keep it out of git)
+  "dashboard_url": "http://arkans-pc1:8090/",   // opened when you tap a notification
+  "startup_summary": true,
+  "crash_loop_restarts": 3,
+  "crash_loop_window_min": 10
+}
+```
+
+A missing or broken alerts config never stops homebase. It logs a warning to
+`logs\homebase.log` and runs without alerts.
 
 ## Install on the desktop
 
@@ -148,6 +188,7 @@ internal/supervisor/
   proc_windows.go            taskkill /T, tasklist memory, Job Object
   proc_unix.go               process groups + SIGTERM/SIGKILL (for dev on a Mac)
   logs.go                    ring buffer + rotating log file
+internal/alerts/             watches statuses, decides what's worth a notification, sends via ntfy
 internal/web/                JSON API + embedded dashboard (HTML/CSS/JS)
 scripts/install-windows.ps1  one-time desktop setup
 scripts/update.ps1           pull + rebuild + redeploy an app (or homebase) from git
@@ -174,7 +215,10 @@ down with it.
 
 ## Ideas
 
-- Notifications (ntfy) when an app crash-loops, reusing go-sentinel's alert code
 - CPU usage and a small response-time sparkline per app
 - Reload the config without restarting homebase
 - "Deploy" button: pull and rebuild an app from its git repo
+
+## License
+
+MIT, see [LICENSE](LICENSE).

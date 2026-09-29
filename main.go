@@ -7,6 +7,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -16,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/MasonKimball05/homebase/internal/alerts"
 	"github.com/MasonKimball05/homebase/internal/config"
 	"github.com/MasonKimball05/homebase/internal/supervisor"
 	"github.com/MasonKimball05/homebase/internal/web"
@@ -24,7 +27,16 @@ import (
 func main() {
 	configPath := flag.String("config", "homebase.json", "path to config file")
 	check := flag.Bool("check", false, "validate the config and exit without starting anything")
+	testAlert := flag.Bool("test-alert", false, "send a test notification and exit")
 	flag.Parse()
+
+	if *testAlert {
+		if err := sendTestAlert(*configPath); err != nil {
+			fmt.Fprintln(os.Stderr, "homebase:", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	if *check {
 		if err := checkConfig(*configPath); err != nil {
@@ -82,11 +94,45 @@ func checkConfig(path string) error {
 			fmt.Printf("            - %s\n", i)
 		}
 	}
+	switch ntfy, err := cfg.Alerts.ResolveNtfyURL(); {
+	case err != nil:
+		fmt.Printf("  WARNING alerts: %v (homebase will run without alerts)\n", err)
+	case ntfy == "":
+		fmt.Println("  alerts: off (no ntfy URL configured)")
+	default:
+		fmt.Println("  alerts: on (ntfy)")
+	}
 	if problems > 0 {
 		return fmt.Errorf("%d app(s) have problems", problems)
 	}
 	fmt.Println("config OK")
 	return nil
+}
+
+func sendTestAlert(configPath string) error {
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return err
+	}
+	ntfy, err := cfg.Alerts.ResolveNtfyURL()
+	if err != nil {
+		return err
+	}
+	if ntfy == "" {
+		return errors.New("no ntfy URL configured (set NTFY_URL in the alerts env_file)")
+	}
+	host, _ := os.Hostname()
+	n := alerts.Ntfy{URL: ntfy, Click: cfg.Alerts.DashboardURL}
+	err = n.Notify(context.Background(), alerts.Message{
+		Title:    "homebase test alert from " + host,
+		Body:     "If you can read this, homebase alerts reach your phone.",
+		Priority: "default",
+		Tags:     "white_check_mark",
+	})
+	if err == nil {
+		fmt.Println("test alert sent")
+	}
+	return err
 }
 
 func run(configPath string) error {
@@ -111,6 +157,30 @@ func run(configPath string) error {
 		mgr.Run(ctx)
 		close(appsDone)
 	}()
+
+	// homebase's own log: stderr plus a file, since on the desktop it runs
+	// as a hidden scheduled task with nowhere to print.
+	if err := os.MkdirAll(cfg.LogDir, 0o755); err == nil {
+		if f, err := os.OpenFile(filepath.Join(cfg.LogDir, "homebase.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+			defer f.Close()
+			log.SetOutput(io.MultiWriter(os.Stderr, f))
+		}
+	}
+	log.Printf("homebase starting: %d app(s), dashboard on %s", len(cfg.Apps), ln.Addr())
+
+	// Alerts are optional: a bad or missing alerts config is logged, never
+	// a reason to leave the apps down.
+	logf := func(format string, args ...any) { log.Printf(format, args...) }
+	var notifier alerts.Notifier
+	switch ntfy, err := cfg.Alerts.ResolveNtfyURL(); {
+	case err != nil:
+		logf("alerts disabled: %v", err)
+	case ntfy != "":
+		notifier = alerts.Ntfy{URL: ntfy, Click: cfg.Alerts.DashboardURL}
+		logf("alerts: sending to ntfy")
+	}
+	host, _ := os.Hostname()
+	go alerts.NewWatcher(mgr.Statuses, notifier, cfg.Alerts, host, logf).Run(ctx)
 
 	srv := &http.Server{Handler: web.New(mgr).Handler(), ReadHeaderTimeout: 5 * time.Second}
 	go func() {

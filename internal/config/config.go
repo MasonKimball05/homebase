@@ -21,7 +21,61 @@ type Config struct {
 	// LogDir holds one rolling log file per app. Relative paths are resolved
 	// against the config file's folder.
 	LogDir string `json:"log_dir"`
+	Alerts Alerts `json:"alerts"`
 	Apps   []App  `json:"apps"`
+}
+
+// Alerts sends phone notifications through ntfy (https://ntfy.sh).
+//
+// The ntfy topic URL works like a password (anyone with it can read your
+// alerts), and this config is committed to git, so keep the URL out of it:
+// put NTFY_URL=... in EnvFile, or set HOMEBASE_NTFY_URL.
+type Alerts struct {
+	NtfyURL string `json:"ntfy_url"`
+	EnvFile string `json:"env_file"`
+	// DashboardURL opens when you tap a notification.
+	DashboardURL string `json:"dashboard_url"`
+	// A crash loop is CrashLoopRestarts restarts within CrashLoopWindowMin minutes.
+	CrashLoopRestarts  int `json:"crash_loop_restarts"`
+	CrashLoopWindowMin int `json:"crash_loop_window_min"`
+	// StartupSummary sends "homebase is up: 2/2 running" shortly after boot.
+	StartupSummary bool `json:"startup_summary"`
+}
+
+func (a Alerts) CrashLoopWindow() time.Duration {
+	return time.Duration(a.CrashLoopWindowMin) * time.Minute
+}
+
+// ResolveNtfyURL finds the topic URL: HOMEBASE_NTFY_URL wins, then NTFY_URL
+// from EnvFile, then NtfyURL. "" means alerts are off.
+func (a Alerts) ResolveNtfyURL() (string, error) {
+	raw := a.NtfyURL
+	if a.EnvFile != "" {
+		env, err := ReadEnvFile(a.EnvFile)
+		if err != nil {
+			return "", fmt.Errorf("alerts env file: %w", err)
+		}
+		if v := env["NTFY_URL"]; v != "" {
+			raw = v
+		}
+	}
+	if v := os.Getenv("HOMEBASE_NTFY_URL"); v != "" {
+		raw = v
+	}
+	if raw == "" {
+		return "", nil
+	}
+	// Don't include the value in the error: it's a secret.
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || len(u.Path) < 2 {
+		return "", fmt.Errorf("the ntfy URL must look like https://ntfy.sh/<topic>")
+	}
+	// Plain http only for an ntfy server on this same machine.
+	local := u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1"
+	if u.Scheme != "https" && !(u.Scheme == "http" && local) {
+		return "", fmt.Errorf("the ntfy URL must use https (http is only allowed for localhost)")
+	}
+	return raw, nil
 }
 
 type App struct {
@@ -108,6 +162,20 @@ func Parse(data []byte, baseDir string) (Config, error) {
 		cfg.LogDir = "logs"
 	}
 	cfg.LogDir = resolve(baseDir, cfg.LogDir)
+	if cfg.Alerts.EnvFile != "" {
+		cfg.Alerts.EnvFile = resolve(baseDir, cfg.Alerts.EnvFile)
+	}
+	if cfg.Alerts.CrashLoopRestarts <= 0 {
+		cfg.Alerts.CrashLoopRestarts = 3
+	}
+	if cfg.Alerts.CrashLoopWindowMin <= 0 {
+		cfg.Alerts.CrashLoopWindowMin = 10
+	}
+	if d := cfg.Alerts.DashboardURL; d != "" {
+		if u, err := url.Parse(d); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return Config{}, fmt.Errorf("alerts.dashboard_url must be an http(s) URL")
+		}
+	}
 
 	seen := map[string]bool{}
 	for i := range cfg.Apps {
