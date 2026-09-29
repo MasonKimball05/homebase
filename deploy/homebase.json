@@ -30,6 +30,7 @@
       "command": "sentinel.exe",
       "args": ["-serve", "-no-open", "-addr", "0.0.0.0:8484", "-watch", "5m",
                "-config", "C:\\Users\\Admin\\projects\\go-sentinel\\sentinel.json"],
+      "env_file": "C:\\Users\\Admin\\apps\\sentinel\\sentinel.env",
       "url": "http://arkans-pc1:8484/",
       "health": "http://127.0.0.1:8484/api/status",
       "autostart": true,
