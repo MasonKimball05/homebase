@@ -1,0 +1,37 @@
+{
+  "listen": "0.0.0.0:8090",
+  "log_dir": "logs",
+  "apps": [
+    {
+      "name": "jobtracker",
+      "title": "Job Tracker",
+      "dir": "C:\\Users\\Admin\\apps\\jobtracker",
+      "command": "JobTracker.exe",
+      "args": ["--urls", "http://0.0.0.0:5206"],
+      "env_file": "C:\\Users\\Admin\\apps\\jobtracker\\jobtracker.env",
+      "url": "http://arkans-pc1:5206/",
+      "health": "http://127.0.0.1:5206/",
+      "autostart": true,
+      "restart_when_unhealthy": true,
+      "source": {
+        "repo_dir": "C:\\Users\\Admin\\projects\\job-tracker",
+        "build": ["dotnet", "publish", "src\\JobTracker", "-c", "Release", "-o", "C:\\Users\\Admin\\apps\\jobtracker"]
+      }
+    },
+    {
+      "name": "sentinel",
+      "title": "go-sentinel",
+      "dir": "C:\\Users\\Admin\\apps\\sentinel",
+      "command": "sentinel.exe",
+      "args": ["-serve", "-no-open", "-addr", "0.0.0.0:8484", "-watch", "5m",
+               "-config", "C:\\Users\\Admin\\projects\\go-sentinel\\sentinel.json"],
+      "url": "http://arkans-pc1:8484/",
+      "health": "http://127.0.0.1:8484/api/status",
+      "autostart": true,
+      "source": {
+        "repo_dir": "C:\\Users\\Admin\\projects\\go-sentinel",
+        "build": ["go", "build", "-o", "C:\\Users\\Admin\\apps\\sentinel\\sentinel.exe", "."]
+      }
+    }
+  ]
+}

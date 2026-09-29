@@ -1,0 +1,6 @@
+/homebase
+/homebase.exe
+/dist/
+/logs/
+*.env
+.DS_Store

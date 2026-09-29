@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>homebase</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="app.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="dot" id="overall" data-state="pending"></span>
+      <h1>homebase</h1>
+      <span class="host muted" id="host"></span>
+    </div>
+    <div class="summary" id="summary">Loading…</div>
+  </header>
+
+  <main>
+    <div id="error" class="banner" hidden></div>
+    <section id="apps" class="grid" aria-live="polite"></section>
+
+    <section id="logs" class="logs" hidden>
+      <div class="logs-head">
+        <h2 id="logs-title">Logs</h2>
+        <label class="follow"><input type="checkbox" id="follow" checked> Follow</label>
+        <button type="button" id="logs-close" class="ghost">Close</button>
+      </div>
+      <pre id="logs-body" tabindex="0"></pre>
+    </section>
+  </main>
+
+  <template id="card">
+    <article class="card">
+      <header>
+        <span class="dot"></span>
+        <div class="titles">
+          <h2></h2>
+          <a class="link" target="_blank" rel="noopener noreferrer"></a>
+        </div>
+        <span class="state"></span>
+      </header>
+      <p class="message" hidden></p>
+      <dl class="facts"></dl>
+      <div class="actions">
+        <button type="button" data-action="start">Start</button>
+        <button type="button" data-action="restart">Restart</button>
+        <button type="button" data-action="stop" class="danger">Stop</button>
+        <button type="button" data-logs class="ghost">Logs</button>
+      </div>
+    </article>
+  </template>
+</body>
+</html>
