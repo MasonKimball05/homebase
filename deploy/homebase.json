@@ -38,6 +38,22 @@
         "repo_dir": "C:\\Users\\Admin\\projects\\go-sentinel",
         "build": ["go", "build", "-o", "C:\\Users\\Admin\\apps\\sentinel\\sentinel.exe", "."]
       }
+    },
+    {
+      "name": "shelf",
+      "title": "Shelf (media)",
+      "dir": "C:\\Users\\Admin\\apps\\shelf",
+      "command": "shelf.exe",
+      "args": ["-config", "C:\\Users\\Admin\\apps\\shelf\\shelf.json"],
+      "env_file": "C:\\Users\\Admin\\apps\\shelf\\shelf.env",
+      "url": "http://arkans-pc1:8095/healthz",
+      "health": "http://127.0.0.1:8095/healthz",
+      "autostart": true,
+      "restart_when_unhealthy": true,
+      "source": {
+        "repo_dir": "C:\\Users\\Admin\\projects\\shelf",
+        "build": ["go", "build", "-trimpath", "-o", "C:\\Users\\Admin\\apps\\shelf\\shelf.exe", "."]
+      }
     }
   ]
 }
