@@ -20,6 +20,30 @@
 
   <main>
     <div id="error" class="banner" hidden></div>
+
+    <section id="machine" class="machine" hidden aria-label="This PC's CPU and memory">
+      <div class="meters">
+        <div class="meter">
+          <div class="meter-head"><span class="meter-label">CPU</span><span class="meter-value" id="cpu-value">–</span></div>
+          <svg class="spark" id="cpu-spark" viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-label="CPU, last 5 minutes">
+            <path class="spark-area"></path><polyline class="spark-line"></polyline>
+          </svg>
+          <div class="meter-sub muted" id="cpu-sub"></div>
+        </div>
+        <div class="meter">
+          <div class="meter-head"><span class="meter-label">Memory</span><span class="meter-value" id="mem-value">–</span></div>
+          <svg class="spark" id="mem-spark" viewBox="0 0 100 30" preserveAspectRatio="none" role="img" aria-label="Memory, last 5 minutes">
+            <path class="spark-area"></path><polyline class="spark-line"></polyline>
+          </svg>
+          <div class="meter-sub muted" id="mem-sub"></div>
+        </div>
+      </div>
+      <table class="usage">
+        <thead><tr><th>By app</th><th>CPU</th><th>Memory</th><th class="share-col">Share of RAM</th></tr></thead>
+        <tbody id="usage-rows"></tbody>
+      </table>
+    </section>
+
     <section id="apps" class="grid" aria-live="polite"></section>
 
     <section id="logs" class="logs" hidden>

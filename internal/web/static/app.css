@@ -72,6 +72,25 @@ main { max-width: 1200px; margin: 0 auto; padding: 24px; }
 .facts .bad { color: var(--bad); }
 
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* resource monitor */
+.machine { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 14px; }
+.meters { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.meter { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.meter-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.meter-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.meter-value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.meter-sub { font-size: 12px; }
+.spark { width: 100%; height: 44px; display: block; }
+.spark-line { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.spark-area { fill: color-mix(in srgb, var(--accent) 28%, transparent); stroke: none; }
+.usage { width: 100%; border-collapse: collapse; font-size: 13px; }
+.usage th { text-align: right; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.usage th:first-child, .usage td:first-child { text-align: left; }
+.usage td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.usage tr:last-child td { border-bottom: none; }
+.usage .num { text-align: right; font-variant-numeric: tabular-nums; }
+.usage .other td { color: var(--muted); }
 button {
   font: inherit; font-weight: 550; padding: 6px 12px; border-radius: 8px;
   border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer;
@@ -99,4 +118,6 @@ button:disabled { opacity: 0.45; cursor: default; }
   .bar { padding: 12px 16px; }
   .grid { grid-template-columns: 1fr; }
   .facts { grid-template-columns: repeat(2, 1fr); }
+  .meters { grid-template-columns: 1fr; }
+  .share-col { display: none; }
 }

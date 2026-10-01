@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/MasonKimball05/homebase/internal/config"
+	"github.com/MasonKimball05/homebase/internal/resources"
 	"github.com/MasonKimball05/homebase/internal/supervisor"
 )
 
@@ -76,5 +77,26 @@ func TestDashboardHasCSP(t *testing.T) {
 	}
 	if !strings.Contains(rec.Header().Get("Content-Security-Policy"), "default-src 'self'") {
 		t.Error("missing CSP")
+	}
+}
+
+func TestStatusIncludesResourcesWhenAvailable(t *testing.T) {
+	cfg := config.Config{LogDir: t.TempDir(), Apps: []config.App{{Name: "web", Title: "Web", Dir: t.TempDir(), Command: "x"}}}
+	snap := resources.Snapshot{CPUPercent: 12.5, MemUsedBytes: 8 << 30, MemTotalBytes: 32 << 30,
+		Apps: map[string]resources.AppUsage{"web": {CPUPercent: 3, MemoryBytes: 200 << 20, Processes: 2}}}
+	h := New(supervisor.NewManager(cfg)).WithResources(func() (resources.Snapshot, bool) { return snap, true }).Handler()
+
+	var v statusView
+	if err := json.NewDecoder(do(h, "GET", "/api/status", nil).Body).Decode(&v); err != nil {
+		t.Fatal(err)
+	}
+	if v.Resources == nil || v.Resources.CPUPercent != 12.5 || v.Resources.Apps["web"].Processes != 2 {
+		t.Fatalf("resources: %+v", v.Resources)
+	}
+
+	// No readings yet (or not Windows): the field is left out entirely.
+	h = New(supervisor.NewManager(cfg)).WithResources(func() (resources.Snapshot, bool) { return resources.Snapshot{}, false }).Handler()
+	if body := do(h, "GET", "/api/status", nil).Body.String(); strings.Contains(body, `"resources"`) {
+		t.Fatalf("expected no resources field: %s", body)
 	}
 }

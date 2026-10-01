@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/MasonKimball05/homebase/internal/resources"
 	"github.com/MasonKimball05/homebase/internal/supervisor"
 )
 
@@ -18,6 +19,7 @@ var staticFiles embed.FS
 
 type Server struct {
 	mgr     *supervisor.Manager
+	usage   func() (resources.Snapshot, bool) // optional: CPU and memory readings
 	host    string
 	started time.Time
 }
@@ -25,6 +27,12 @@ type Server struct {
 func New(mgr *supervisor.Manager) *Server {
 	host, _ := os.Hostname()
 	return &Server{mgr: mgr, host: host, started: time.Now()}
+}
+
+// WithResources adds machine and per-app CPU/memory readings to /api/status.
+func (s *Server) WithResources(latest func() (resources.Snapshot, bool)) *Server {
+	s.usage = latest
+	return s
 }
 
 func (s *Server) Handler() http.Handler {
@@ -41,14 +49,21 @@ type statusView struct {
 	Host          string              `json:"host"`
 	UptimeSeconds int64               `json:"uptime_seconds"`
 	Apps          []supervisor.Status `json:"apps"`
+	Resources     *resources.Snapshot `json:"resources,omitempty"` // absent off Windows or before the second reading
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, statusView{
+	view := statusView{
 		Host:          s.host,
 		UptimeSeconds: int64(time.Since(s.started).Seconds()),
 		Apps:          s.mgr.Statuses(),
-	})
+	}
+	if s.usage != nil {
+		if snap, ok := s.usage(); ok {
+			view.Resources = &snap
+		}
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 
 // logs returns lines newer than ?after=<seq>, for polling.

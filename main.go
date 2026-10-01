@@ -20,6 +20,7 @@ import (
 
 	"github.com/MasonKimball05/homebase/internal/alerts"
 	"github.com/MasonKimball05/homebase/internal/config"
+	"github.com/MasonKimball05/homebase/internal/resources"
 	"github.com/MasonKimball05/homebase/internal/supervisor"
 	"github.com/MasonKimball05/homebase/internal/web"
 )
@@ -182,7 +183,19 @@ func run(configPath string) error {
 	host, _ := os.Hostname()
 	go alerts.NewWatcher(mgr.Statuses, notifier, cfg.Alerts, host, logf).Run(ctx)
 
-	srv := &http.Server{Handler: web.New(mgr).Handler(), ReadHeaderTimeout: 5 * time.Second}
+	// CPU and memory for the machine and each app (Windows only; a no-op elsewhere).
+	usage := resources.NewSampler(func() map[string]uint32 {
+		roots := map[string]uint32{}
+		for _, st := range mgr.Statuses() {
+			if st.PID > 0 {
+				roots[st.Name] = uint32(st.PID)
+			}
+		}
+		return roots
+	}, 3*time.Second)
+	go usage.Run(ctx)
+
+	srv := &http.Server{Handler: web.New(mgr).WithResources(usage.Latest).Handler(), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)

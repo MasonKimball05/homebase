@@ -12,6 +12,7 @@ let logApp = null;    // app whose logs are open
 let logAfter = 0;     // last log seq received
 let logTimer = null;
 const pending = new Set(); // apps with an action in flight
+let usage = null;          // latest CPU/memory readings (absent off Windows)
 
 async function refresh() {
   try {
@@ -37,6 +38,8 @@ function visualState(app) {
 }
 
 function render(data) {
+  usage = data.resources ?? null;
+  renderMachine(data);
   el("host").textContent = data.host ? `on ${data.host}` : "";
   const states = data.apps.map(visualState);
   const up = states.filter((s) => s === "running").length;
@@ -84,19 +87,21 @@ function card(app) {
   const facts = [
     ["Uptime", app.started_at ? duration((Date.now() - Date.parse(app.started_at)) / 1000) : "–"],
     ["Response", app.health ? (app.health.ok ? `${app.health.latency_ms} ms` : "down") : "–", app.health && !app.health.ok],
-    ["Memory", app.memory_bytes ? bytes(app.memory_bytes) : "–"],
+    ["CPU", appUsage(app) ? `${appUsage(app).cpu_percent.toFixed(1)}%` : "–"],
+    ["Memory", memoryText(app), false, appUsage(app)?.processes > 1 ? `Across ${appUsage(app).processes} processes` : ""],
     ["Restarts", String(app.restarts)],
     ["PID", app.pid ? String(app.pid) : "–"],
     ["Last exit", lastExit(app.last_exit), app.last_exit && !app.last_exit.requested && app.last_exit.code !== 0],
   ];
   const dl = node.querySelector(".facts");
-  for (const [label, value, bad] of facts) {
+  for (const [label, value, bad, tip] of facts) {
     const div = document.createElement("div");
     const dt = document.createElement("dt");
     const dd = document.createElement("dd");
     dt.textContent = label;
     dd.textContent = value;
     if (bad) dd.className = "bad";
+    if (tip) div.title = tip;
     div.append(dt, dd);
     dl.append(div);
   }
@@ -185,6 +190,74 @@ async function pollLogs() {
 }
 
 // ---------- formatting ----------
+
+// ---- resource monitor ----
+
+function appUsage(app) {
+  return app.pid > 0 ? usage?.apps?.[app.name] : undefined;
+}
+
+// Memory for the whole process tree when the monitor has it, else the
+// supervisor's reading of the main process.
+function memoryText(app) {
+  const u = appUsage(app);
+  if (u && u.memory_bytes) return bytes(u.memory_bytes);
+  return app.memory_bytes ? bytes(app.memory_bytes) : "–";
+}
+
+function renderMachine(data) {
+  const r = data.resources;
+  el("machine").hidden = !r;
+  if (!r) return;
+
+  const memPct = r.mem_total_bytes ? (r.mem_used_bytes / r.mem_total_bytes) * 100 : 0;
+  el("cpu-value").textContent = `${Math.round(r.cpu_percent)}%`;
+  el("cpu-sub").textContent = `${r.cores} logical processors · last 5 minutes`;
+  el("mem-value").textContent = `${bytes(r.mem_used_bytes)} / ${bytes(r.mem_total_bytes)}`;
+  el("mem-sub").textContent = `${Math.round(memPct)}% in use · last 5 minutes`;
+  sparkline(el("cpu-spark"), r.history.map((p) => p.cpu_percent));
+  sparkline(el("mem-spark"), r.history.map((p) => p.mem_percent));
+
+  // One row per running app, biggest memory first, then everything else.
+  const rows = data.apps
+    .map((app) => ({ app, u: appUsage(app) }))
+    .filter((x) => x.u)
+    .sort((a, b) => b.u.memory_bytes - a.u.memory_bytes);
+  const appCPU = rows.reduce((n, x) => n + x.u.cpu_percent, 0);
+  const appMem = rows.reduce((n, x) => n + x.u.memory_bytes, 0);
+  const share = (b) => (r.mem_total_bytes ? `${((b / r.mem_total_bytes) * 100).toFixed(1)}%` : "–");
+  const tr = (name, cpu, mem, cls) => {
+    const row = document.createElement("tr");
+    if (cls) row.className = cls;
+    for (const [text, c] of [[name, ""], [`${cpu.toFixed(1)}%`, "num"], [bytes(mem), "num"], [share(mem), "num share-col"]]) {
+      const td = document.createElement("td");
+      td.textContent = text;
+      if (c) td.className = c;
+      row.append(td);
+    }
+    return row;
+  };
+  el("usage-rows").replaceChildren(
+    ...rows.map((x) => tr(x.app.title, x.u.cpu_percent, x.u.memory_bytes)),
+    tr("Everything else", Math.max(0, r.cpu_percent - appCPU), Math.max(0, r.mem_used_bytes - appMem), "other"),
+  );
+}
+
+// Draw a 0-100 series into an SVG with a .spark-line polyline and a
+// .spark-area path (viewBox 0 0 100 30).
+function sparkline(svg, values) {
+  const line = svg.querySelector(".spark-line");
+  const area = svg.querySelector(".spark-area");
+  if (values.length < 2) {
+    line.setAttribute("points", "");
+    area.setAttribute("d", "");
+    return;
+  }
+  const step = 100 / (values.length - 1);
+  const pts = values.map((v, i) => `${(i * step).toFixed(2)},${(29 - (Math.min(Math.max(v, 0), 100) / 100) * 27).toFixed(2)}`);
+  line.setAttribute("points", pts.join(" "));
+  area.setAttribute("d", `M0,30 L${pts.join(" L")} L100,30 Z`);
+}
 
 function duration(sec) {
   sec = Math.max(0, Math.floor(sec));
