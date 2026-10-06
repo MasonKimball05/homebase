@@ -70,6 +70,22 @@
         "repo_dir": "C:\\Users\\Admin\\apps\\gradtrack",
         "build": ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "bin\\update.ps1"]
       }
+    },
+    {
+      "name": "krakenlite",
+      "title": "KrakenLite (repo history)",
+      "dir": "C:\\Users\\Admin\\projects\\krakenlite",
+      "command": "python",
+      "args": ["server.py", "--root", "C:\\Users\\Admin\\projects",
+               "--host", "0.0.0.0", "--port", "8097", "--no-open"],
+      "url": "http://arkans-pc1:8097/",
+      "health": "http://127.0.0.1:8097/healthz",
+      "autostart": true,
+      "restart_when_unhealthy": true,
+      "source": {
+        "repo_dir": "C:\\Users\\Admin\\projects\\krakenlite",
+        "build": ["python", "-m", "py_compile", "server.py"]
+      }
     }
   ]
 }
