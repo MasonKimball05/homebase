@@ -131,3 +131,17 @@ func TestOllamaDown(t *testing.T) {
 		t.Error("took too long to give up")
 	}
 }
+
+func TestBaseAddressOpensThePage(t *testing.T) {
+	h := handler(t, "http://127.0.0.1:1") // never contacted
+	for _, path := range []string{"/ollama", "/ollama/"} {
+		rec := call(h, "GET", path, "", nil)
+		if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/ai.html" {
+			t.Errorf("GET %s: %d %q, want a redirect to /ai.html", path, rec.Code, rec.Header().Get("Location"))
+		}
+	}
+	// Only the base itself: other paths under it still aren't passed on.
+	if rec := call(h, "GET", "/ollama/api/ps", "", nil); rec.Code == http.StatusFound || rec.Code == http.StatusOK {
+		t.Errorf("GET /ollama/api/ps answered %d", rec.Code)
+	}
+}

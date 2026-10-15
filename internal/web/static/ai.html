@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Local AI · homebase</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="ai.css">
+  <script src="ai.js" defer></script>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <a href="./" class="back" title="Back to the dashboard">homebase</a>
+      <span class="muted">/</span>
+      <h1>Local AI</h1>
+    </div>
+    <a class="chat-link" href="chat.html">Open chat →</a>
+  </header>
+
+  <main class="ai-main">
+    <section class="status-line" aria-live="polite">
+      <span class="dot" id="ollama-dot" data-state="pending"></span>
+      <p id="ollama-status">Checking Ollama…</p>
+    </section>
+    <div id="error" class="banner" hidden></div>
+
+    <section class="panel" aria-labelledby="models-title">
+      <div class="panel-head">
+        <h2 id="models-title">Models</h2>
+        <span class="muted small" id="models-note"></span>
+      </div>
+      <table class="models">
+        <thead><tr><th>Model</th><th>Size</th><th>Parameters</th><th>Quantization</th><th></th></tr></thead>
+        <tbody id="model-rows"></tbody>
+      </table>
+      <p class="small muted">To add one, on this PC run <code>ollama pull &lt;name&gt;</code> (for example <code>ollama pull qwen3-coder:30b</code>). Pulling and deleting models can't be done from here, on purpose.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="loom-title">
+      <h2 id="loom-title">Use it from Loom</h2>
+      <p>Loom's Local AI view can read and edit your project with these models, asking you before every change.</p>
+      <ol class="steps">
+        <li>In Loom, open Settings (⌘, on a Mac, Ctrl+, on Windows) and find <strong>Local AI</strong>.</li>
+        <li>
+          Set the host to this address:
+          <span class="copy-field">
+            <code id="host-url">…</code>
+            <button type="button" data-copy="host-url">Copy</button>
+          </span>
+        </li>
+        <li>Open the Local AI view in the activity bar and pick a model. <span class="muted" id="loom-model-hint"></span></li>
+      </ol>
+      <p class="small muted">Works from any of your devices on Tailscale. Use a model with tool support (qwen3-coder, gpt-oss) so it can open files; others can still chat.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="api-title">
+      <h2 id="api-title">Use it from other tools</h2>
+      <p>Anything that speaks Ollama's API and lets you set a base URL can use it. Homebase passes on three endpoints:</p>
+      <dl class="endpoints">
+        <dt><code>GET <span class="base"></span>/api/version</code></dt><dd>Ollama's version: is it up</dd>
+        <dt><code>GET <span class="base"></span>/api/tags</code></dt><dd>The models on this PC</dd>
+        <dt><code>POST <span class="base"></span>/api/chat</code></dt><dd>A chat, streamed. Send the header <code>X-Homebase: 1</code>; browsers on other sites are refused.</dd>
+      </dl>
+      <p class="small muted">Try it from a terminal:</p>
+      <div class="copy-block">
+        <pre id="curl-example">…</pre>
+        <button type="button" data-copy="curl-example">Copy</button>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -53,7 +53,9 @@ async function loadModels() {
     if (!names.length) return showError("Ollama has no models yet. On the PC: ollama pull qwen3-coder:30b");
     let saved = null;
     try { saved = localStorage.getItem(STORE + ".model"); } catch {}
-    const pick = [saved, info.default_model, info.default_model && `${info.default_model}:latest`].find((n) => n && names.includes(n)) || names[0];
+    // "Chat" on the Local AI page links here with ?model=<name>.
+    const asked = new URLSearchParams(location.search).get("model");
+    const pick = [asked, saved, info.default_model, info.default_model && `${info.default_model}:latest`].find((n) => n && names.includes(n)) || names[0];
     const sel = el("model");
     sel.replaceChildren(...names.map((n) => new Option(n, n, false, n === pick)));
     el("error").hidden = true;

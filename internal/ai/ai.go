@@ -70,6 +70,13 @@ func New(ollama, defaultModel string) (*Proxy, error) {
 // dashboard (or a non-browser client) rather than another website.
 func (p *Proxy) Register(mux *http.ServeMux, allowed func(*http.Request) bool) {
 	mux.HandleFunc("GET /api/ai", p.info)
+	// The base address itself isn't an endpoint; someone opening it in a
+	// browser gets the page that explains what's here instead of a 404.
+	for _, path := range []string{"GET /ollama", "GET /ollama/{$}"} {
+		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/ai.html", http.StatusFound)
+		})
+	}
 	mux.HandleFunc("GET /ollama/api/version", p.passGet("/api/version"))
 	mux.HandleFunc("GET /ollama/api/tags", p.passGet("/api/tags"))
 	mux.HandleFunc("POST /ollama/api/chat", func(w http.ResponseWriter, r *http.Request) {

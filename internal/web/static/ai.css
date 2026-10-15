@@ -1,0 +1,48 @@
+/* The Local AI page: what Ollama on this PC offers, and how to connect to it. */
+
+.back { color: var(--text); text-decoration: none; font-weight: 700; font-size: 18px; }
+.back:hover { color: var(--accent); }
+.bar .chat-link { margin-left: auto; }
+.small { font-size: 12px; }
+
+.ai-main { max-width: 860px; display: flex; flex-direction: column; gap: 16px; }
+.ai-main code { font: 0.92em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+
+.status-line { display: flex; align-items: center; gap: 10px; }
+.status-line p { margin: 0; font-size: 15px; }
+.dot[data-state="pending"] { background: var(--idle); }
+.dot[data-state="down"] { background: var(--bad); }
+
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+.panel h2 { margin: 0 0 8px; font-size: 15px; }
+.panel p { margin: 8px 0; }
+.panel-head { display: flex; align-items: baseline; gap: 10px; }
+.panel-head h2 { margin-bottom: 4px; }
+
+.models { width: 100%; border-collapse: collapse; margin: 6px 0 4px; }
+.models th { text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.models td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.models tr:last-child td { border-bottom: none; }
+.models td:first-child { font-weight: 600; overflow-wrap: anywhere; }
+.models td:last-child { text-align: right; white-space: nowrap; }
+.models .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.badge { display: inline-block; margin-left: 8px; padding: 0 7px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); vertical-align: 1px; }
+.models a.button { display: inline-block; font-size: 13px; padding: 4px 12px; border-radius: 8px; border: 1px solid var(--border); color: var(--text); text-decoration: none; }
+.models a.button:hover { border-color: var(--accent); color: var(--accent); }
+
+.steps { margin: 8px 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
+.copy-field { display: inline-flex; align-items: center; gap: 8px; margin-left: 4px; flex-wrap: wrap; }
+.copy-field code { font-size: 13px; padding: 4px 8px; user-select: all; }
+
+.endpoints { margin: 8px 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; }
+.endpoints dt { margin: 0; }
+.endpoints dd { margin: 0; color: var(--muted); }
+.copy-block { position: relative; }
+.copy-block pre { margin: 0; padding: 12px 14px; padding-right: 72px; background: var(--log-bg); color: var(--log-text); border-radius: 8px; overflow: auto; font: 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.copy-block button { position: absolute; top: 8px; right: 8px; font-size: 12px; padding: 2px 10px; background: transparent; color: var(--log-text); border-color: #333a45; }
+
+@media (max-width: 640px) {
+  .models th:nth-child(3), .models td:nth-child(3), .models th:nth-child(4), .models td:nth-child(4) { display: none; }
+  .endpoints { grid-template-columns: 1fr; }
+  .endpoints dd { margin-bottom: 6px; }
+}

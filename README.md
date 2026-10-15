@@ -129,8 +129,11 @@ so you can use them from the Mac or your phone over Tailscale:
 }
 ```
 
-- **In the browser:** the dashboard gets a "Chat with qwen3-coder →" link to
-  `chat.html`: pick a model, ask, and the answer streams in. Stop cancels
+- **Local AI page** (`ai.html`, also what `/ollama` opens in a browser): the
+  dashboard's "Local AI →" link. It shows whether Ollama is up, the models
+  on the PC (each with a Chat button), the address to give Loom with a Copy
+  button, and the endpoints other tools can use, with a curl example.
+- **In the browser:** `chat.html`: pick a model, ask, and the answer streams in. Stop cancels
   the request (and the generation). Conversations stay in that browser's
   local storage.
 - **From Loom** (or any Ollama client that takes a base URL): set its server

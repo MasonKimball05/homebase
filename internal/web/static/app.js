@@ -293,8 +293,7 @@ fetch("api/ai")
   .then((r) => r.json())
   .then((info) => {
     if (!info.enabled) return;
-    const a = el("chat-link");
-    if (info.default_model) a.textContent = `Chat with ${info.default_model.split(":")[0]} →`;
-    a.hidden = false;
+    // The Local AI page: models, how to connect Loom, and the chat.
+    el("chat-link").hidden = false;
   })
   .catch(() => {});
