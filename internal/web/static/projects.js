@@ -1,5 +1,6 @@
 // The Projects page: this PC's git projects, what changed in them since the
-// last commit, and their files. Read-only (see internal/projects).
+// last commit, and their files, plus a few git buttons (Fetch, Pull, Push,
+// Commit, and switching branch). See internal/projects.
 //
 // Where you are lives in the address (#shop, #shop/files/src, #shop/file/
 // src/app.py), so Back works and a project can be bookmarked. With Live on,
@@ -235,6 +236,7 @@ function renderSync(p) {
     parts.push(` · ${p.last_fetch ? `checked ${ago(p.last_fetch)}` : "never fetched"}`);
   }
   el("sync-state").replaceChildren(...parts);
+  el("p-branch").disabled = busy;
   const set = (sel, on) => (document.querySelector(sel).disabled = busy || !on);
   set('[data-git="fetch"]', !!p.upstream);
   set('[data-git="pull"]', !!p.upstream && !p.gone && p.behind > 0);
@@ -251,7 +253,7 @@ function showResult(ok, text, output) {
   el("result-details").open = false;
 }
 
-const VERB = { fetch: "Fetching…", pull: "Pulling…", push: "Pushing…", commit: "Committing…" };
+const VERB = { fetch: "Fetching…", pull: "Pulling…", push: "Pushing…", commit: "Committing…", switch: "Switching branch…" };
 
 async function gitAction(action, body) {
   const p = projects.find((x) => x.id === route().id);
@@ -274,6 +276,7 @@ async function gitAction(action, body) {
       el("commit-form").hidden = true;
       el("commit-message").value = "";
     }
+    if (action === "fetch" || action === "switch") branchesFor = ""; // new remote branches, or a new current one
   } catch {
     showResult(false, "Can't reach homebase. Is it still running?");
   } finally {
@@ -296,6 +299,70 @@ el("commit-form").addEventListener("submit", (e) => {
   const message = el("commit-message").value.trim();
   if (!message) return el("commit-message").focus();
   gitAction("commit", { message });
+});
+
+// ---------------- branches ----------------
+
+let branchesFor = ""; // the project the picker was filled for
+
+/** Fills the branch picker: this project's branches, then the remote's that aren't here yet. */
+async function loadBranches(p) {
+  const pick = el("p-branch");
+  if (branchesFor === p.id) {
+    pick.value = p.branch || "";
+    return;
+  }
+  branchesFor = p.id;
+  const current = make("option", p.branch || "(no branch)");
+  current.value = p.branch || "";
+  pick.replaceChildren(current);
+  pick.value = current.value;
+  try {
+    const data = await getJSON(`api/projects/${encodeURIComponent(p.id)}/branches`);
+    if (branchesFor !== p.id) return; // moved on meanwhile
+    const local = data.branches.filter((b) => !b.remote);
+    const remote = data.branches.filter((b) => b.remote);
+    const opt = (b) => {
+      const o = make("option", b.remote ? `${b.name} (from ${b.remote})` : b.name);
+      o.value = b.name;
+      return o;
+    };
+    const groups = [];
+    if (local.length) {
+      const g = make("optgroup");
+      g.label = "On the desktop";
+      g.append(...local.map(opt));
+      groups.push(g);
+    }
+    if (remote.length) {
+      const g = make("optgroup");
+      g.label = "Only on the remote";
+      g.append(...remote.map(opt));
+      groups.push(g);
+    }
+    if (groups.length) pick.replaceChildren(...groups);
+    pick.value = data.current || p.branch || "";
+  } catch {
+    branchesFor = ""; // try again next time
+  }
+}
+
+el("p-branch").addEventListener("change", () => {
+  const p = projects.find((x) => x.id === route().id);
+  const pick = el("p-branch");
+  const to = pick.value;
+  if (!p || !to || to === p.branch) return;
+  if (p.changed > 0) {
+    pick.value = p.branch;
+    showResult(false, `${p.name} has ${p.changed} uncommitted change${p.changed === 1 ? "" : "s"}. Commit them first, then switch branches.`);
+    return;
+  }
+  const remote = pick.selectedOptions[0]?.textContent.includes("(from ");
+  if (!confirm(`Switch ${p.name} on the desktop from ${p.branch} to ${to}?${remote ? `\n\n${to} isn't on the desktop yet: it'll be created from the remote's copy.` : ""}`)) {
+    pick.value = p.branch;
+    return;
+  }
+  gitAction("switch", { branch: to });
 });
 
 // ---------------- putting it together ----------------
@@ -321,8 +388,8 @@ async function render() {
     if (seenFiles !== p.id) seenFiles = null;
   }
   el("p-name").textContent = p.name;
-  el("p-branch").textContent = p.branch || "";
-  el("p-branch").hidden = !p.branch;
+  el("p-branch").disabled = busy;
+  loadBranches(p);
   el("p-commit").textContent = p.last_commit ? `last commit ${p.last_commit.hash} "${p.last_commit.subject}", ${ago(p.last_commit.when)}` : "no commits yet";
   el("p-count").textContent = p.changed || "";
   renderSync(p);

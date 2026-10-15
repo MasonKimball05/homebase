@@ -86,6 +86,7 @@ func (b *Browser) Register(mux *http.ServeMux, allowed func(*http.Request) bool)
 	mux.HandleFunc("POST /api/projects/{id}/git/{action}", b.act)
 	mux.HandleFunc("GET /api/projects", b.list)
 	mux.HandleFunc("GET /api/projects/{id}/changes", b.changes)
+	mux.HandleFunc("GET /api/projects/{id}/branches", b.branches)
 	mux.HandleFunc("GET /api/projects/{id}/tree", b.tree)
 	mux.HandleFunc("GET /api/projects/{id}/file", b.file)
 }

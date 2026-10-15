@@ -105,3 +105,5 @@ button.primary:hover:not(:disabled) { color: #fff; filter: brightness(1.08); }
 .result pre { margin: 6px 0 0; padding: 8px 10px; background: var(--log-bg); color: var(--log-text); border-radius: 6px; overflow: auto; max-height: 240px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; }
 .project-list .p-sync { grid-column: 1; font-size: 11px; color: var(--accent); }
 .count:empty { display: none; }
+select.branch { color: var(--text); cursor: pointer; max-width: 260px; }
+select.branch:disabled { cursor: default; opacity: 0.6; }

@@ -197,7 +197,7 @@ seconds, so you can watch a change happen. The address says where you are
 (`#loom/files/src`), so Back works and you can bookmark a project.
 
 Each project also shows how it stands with its remote ("2 to push · 1 to
-pull", as of the last fetch) and has four git buttons:
+pull", as of the last fetch) and has four git buttons and a branch picker:
 
 - **Fetch** checks the remote for new commits (`git fetch --prune`).
 - **Pull** brings them in, **fast-forward only**: if the desktop and the
@@ -209,7 +209,14 @@ pull", as of the last fetch) and has four git buttons:
   -A`). It refuses if a secret-looking file (`.env`, a key) would go in:
   add it to `.gitignore` first.
 
-Push and Pull ask before they run. Git is never allowed to stop for a
+The branch name next to the project is a picker: choose another branch to
+switch the desktop's copy to it (`git switch`). It lists the project's own
+branches, then the ones only the remote has (Fetch first to see new ones);
+picking one of those creates it on the desktop, tracking the remote's. It
+won't switch while there are uncommitted changes, so work never moves to
+another branch by accident: commit first.
+
+Push, Pull and switching branch ask before they run. Git is never allowed to stop for a
 password: if the desktop has no saved login for a remote, the button says
 so (push once by hand on the desktop and Git Credential Manager remembers
 it). Git's own output is under "Show git output".

@@ -8,6 +8,7 @@ package projects
 //	pull     git pull --ff-only          (never merges or rebases on its own)
 //	push     git push                    (the branch to its own upstream; never --force)
 //	commit   git add -A; git commit -m   (refused if a secret-looking file would go in)
+//	switch   git switch <branch>         (only a listed branch, never with uncommitted changes; branches.go)
 //
 // Like the dashboard's Start/Stop buttons they need the X-Homebase header from
 // the dashboard itself (no other website can press them), one runs at a time
@@ -88,16 +89,17 @@ func (b *Browser) act(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	action := r.PathValue("action")
-	if action != "fetch" && action != "pull" && action != "push" && action != "commit" {
+	if action != "fetch" && action != "pull" && action != "push" && action != "commit" && action != "switch" {
 		writeError(w, http.StatusNotFound, "unknown action")
 		return
 	}
 	var body struct {
 		Message string `json:"message"`
+		Branch  string `json:"branch"`
 	}
-	if action == "commit" {
+	if action == "commit" || action == "switch" {
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&body); err != nil {
-			writeError(w, http.StatusBadRequest, "send the commit message as JSON: {\"message\": \"...\"}")
+			writeError(w, http.StatusBadRequest, "send it as JSON: {\"message\": \"...\"} to commit, {\"branch\": \"...\"} to switch")
 			return
 		}
 	}
@@ -115,7 +117,11 @@ func (b *Browser) act(w http.ResponseWriter, r *http.Request) {
 	// Finish what was started even if the page closes: a half-done push helps nobody.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), actionTimeout)
 	defer cancel()
-	summary, out, err := b.run(ctx, p, action, strings.TrimSpace(body.Message))
+	arg := strings.TrimSpace(body.Message)
+	if action == "switch" {
+		arg = strings.TrimSpace(body.Branch)
+	}
+	summary, out, err := b.run(ctx, p, action, arg)
 
 	b.forget() // the next listing must show the new state
 	now, _ := b.project(ctx, p.ID)
@@ -129,7 +135,9 @@ func (b *Browser) act(w http.ResponseWriter, r *http.Request) {
 }
 
 // run does one action; the error, if any, is written for a person to read.
-func (b *Browser) run(ctx context.Context, p Project, action, message string) (string, string, error) {
+// arg is the commit message, or the branch to switch to.
+func (b *Browser) run(ctx context.Context, p Project, action, arg string) (string, string, error) {
+	message := arg
 	st, err := b.status(ctx, p.path)
 	if err != nil {
 		return "", "", fmt.Errorf("couldn't read the project's status: %v", err)
@@ -223,8 +231,48 @@ func (b *Browser) run(ctx context.Context, p Project, action, message string) (s
 			return "", out, fmt.Errorf("commit failed: %s", firstLine(out, err))
 		}
 		return fmt.Sprintf("Committed %d file%s.", len(st.files), plural(len(st.files))), out, nil
+	case "switch":
+		return b.switchBranch(ctx, p, st, arg, git)
 	}
 	return "", "", errors.New("unknown action")
+}
+
+func (b *Browser) switchBranch(ctx context.Context, p Project, st repoStatus, name string, git func(...string) (string, error)) (string, string, error) {
+	if name == "" {
+		return "", "", errors.New("pick a branch to switch to")
+	}
+	if name == st.branch {
+		return fmt.Sprintf("Already on %s.", name), "", nil
+	}
+	if n := len(st.files); n > 0 {
+		return "", "", fmt.Errorf("%s has %d uncommitted change%s. Commit them first (or stash them on the desktop), then switch, so nothing moves to the other branch by accident", p.Name, n, plural(n))
+	}
+	list, err := b.branchList(ctx, p.path, st.branch)
+	if err != nil {
+		return "", "", fmt.Errorf("couldn't list the branches: %v", err)
+	}
+	for _, br := range list {
+		if br.Name != name {
+			continue
+		}
+		var out string
+		if br.Remote == "" {
+			out, err = git("switch", br.Name)
+		} else {
+			out, err = git("switch", "-c", br.Name, "--track", br.Upstream)
+		}
+		if err != nil {
+			if strings.Contains(out, "would be overwritten") {
+				return "", out, errors.New("can't switch: it would overwrite files that aren't committed. Commit or remove them first")
+			}
+			return "", out, fmt.Errorf("switch failed: %s", firstLine(out, err))
+		}
+		if br.Remote != "" {
+			return fmt.Sprintf("Switched to %s (new here, tracking %s).", br.Name, br.Upstream), out, nil
+		}
+		return fmt.Sprintf("Switched to %s.", br.Name), out, nil
+	}
+	return "", "", fmt.Errorf("there's no branch called %q here or on the remote. Fetch first if it's new", name)
 }
 
 func fetchSummary(st repoStatus) string {
