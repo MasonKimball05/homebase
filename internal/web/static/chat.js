@@ -85,6 +85,8 @@ async function send() {
   setBusy(true);
   let thinking = "";
   let stats = "";
+  let failed = false;
+  let frame = 0;
   try {
     const res = await fetch("ollama/api/chat", {
       method: "POST",
@@ -99,7 +101,6 @@ async function send() {
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
-    let frame = 0;
     const draw = () => {
       frame = 0;
       view.update(reply.content, thinking, false);
@@ -124,15 +125,20 @@ async function send() {
       frame ||= requestAnimationFrame(draw);
     }
   } catch (e) {
-    if (e.name !== "AbortError") view.error(e.message || String(e));
+    if (e.name !== "AbortError") {
+      failed = true;
+      view.error(e.message || String(e), reply.content);
+    }
   } finally {
+    // A redraw still queued from streaming would wipe the final stats line.
+    cancelAnimationFrame(frame);
     controller = null;
     setBusy(false);
     if (reply.content) {
       messages.push(reply);
       save();
     }
-    view.update(reply.content, thinking, true, stats);
+    if (!failed) view.update(reply.content, thinking, true, stats);
     el("input").focus();
   }
 }
@@ -230,11 +236,13 @@ function addAssistant(append = true) {
       foot.textContent = stats;
       scrollDown(stick);
     },
-    error(msg) {
+    // Keeps whatever arrived before the failure, then says what went wrong.
+    error(msg, partial = "") {
       const e = document.createElement("div");
       e.className = "msg-error";
       e.textContent = msg;
-      body.replaceChildren(e);
+      body.replaceChildren(...(partial ? [renderMarkdown(partial)] : []), e);
+      think.hidden = true;
     },
   };
 }
