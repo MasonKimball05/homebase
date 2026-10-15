@@ -22,6 +22,8 @@ func fakeOllama(t *testing.T) (*httptest.Server, *http.Request) {
 			io.WriteString(w, `{"models":[{"name":"qwen3-coder:30b"}]}`)
 		case "/api/ps":
 			io.WriteString(w, `{"models":[{"name":"qwen3-coder:30b","size":19000000000,"size_vram":12000000000}]}`)
+		case "/api/generate":
+			io.WriteString(w, `{"response":"return 0.0","done":true}`)
 		case "/api/chat":
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			io.WriteString(w, `{"message":{"content":"Hi"}}`+"\n")
@@ -76,7 +78,7 @@ func TestPassesVersionAndTags(t *testing.T) {
 func TestOnlyChatAndListingAreReachable(t *testing.T) {
 	o, _ := fakeOllama(t)
 	h := handler(t, o.URL)
-	for _, path := range []string{"/ollama/api/pull", "/ollama/api/delete", "/ollama/api/create", "/ollama/api/generate"} {
+	for _, path := range []string{"/ollama/api/pull", "/ollama/api/delete", "/ollama/api/create", "/ollama/api/copy", "/ollama/api/embed"} {
 		if rec := call(h, "POST", path, `{"model":"x"}`, map[string]string{"X-Homebase": "1"}); rec.Code != http.StatusNotFound && rec.Code != http.StatusMethodNotAllowed {
 			t.Errorf("%s answered %d", path, rec.Code)
 		}
@@ -96,6 +98,29 @@ func TestChatStreamsThrough(t *testing.T) {
 	}
 	if got.Header.Get("Origin") != "" || got.Header.Get("Cookie") != "" {
 		t.Errorf("browser headers leaked to Ollama: %v", got.Header)
+	}
+}
+
+func TestGenerateForInlineCompletions(t *testing.T) {
+	o, got := fakeOllama(t)
+	h := handler(t, o.URL)
+	ok := map[string]string{"X-Homebase": "1"}
+	rec := call(h, "POST", "/ollama/api/generate", `{"model":"qwen2.5-coder:1.5b","prompt":"def f():\n    ","suffix":"\n","stream":false}`, ok)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "return 0.0") || got.URL.Path != "/api/generate" {
+		t.Fatalf("generate: %d %s (Ollama got %s)", rec.Code, rec.Body, got.URL.Path)
+	}
+	for _, tc := range []struct {
+		body    string
+		headers map[string]string
+		want    int
+	}{
+		{`{"model":"m","prompt":"x"}`, nil, http.StatusForbidden},
+		{`{"model":"m"}`, ok, http.StatusBadRequest},
+		{`{"model":"../x","prompt":"x"}`, ok, http.StatusBadRequest},
+	} {
+		if rec := call(h, "POST", "/ollama/api/generate", tc.body, tc.headers); rec.Code != tc.want {
+			t.Errorf("%s: got %d, want %d", tc.body, rec.Code, tc.want)
+		}
 	}
 }
 

@@ -2,15 +2,16 @@
 // Ollama serves on this PC.
 //
 // Ollama has no login of its own, so it stays bound to 127.0.0.1 and homebase
-// passes on exactly four of its endpoints under /ollama/:
+// passes on exactly five of its endpoints under /ollama/:
 //
 //	GET  /ollama/api/version   is it there
 //	GET  /ollama/api/tags      which models are pulled
 //	GET  /ollama/api/ps        which are loaded, and how much sits in VRAM
 //	POST /ollama/api/chat      a (streamed) chat request
+//	POST /ollama/api/generate  a completion (Loom's inline suggestions as you type)
 //
 // Nothing that pulls, deletes, copies or creates models is reachable. A chat
-// request must come from the dashboard or a non-browser client (the same
+// or generate request must come from the dashboard or a non-browser client (the same
 // X-Homebase header and Sec-Fetch-Site checks as the app buttons), carries
 // at most MaxBody bytes, and is checked for a model name and messages before
 // it's sent on. The answer is streamed back as it arrives, and closing the
@@ -86,7 +87,14 @@ func (p *Proxy) Register(mux *http.ServeMux, allowed func(*http.Request) bool) {
 			writeError(w, http.StatusForbidden, "request not from the dashboard")
 			return
 		}
-		p.chat(w, r)
+		p.forward(w, r, "/api/chat", CheckChat)
+	})
+	mux.HandleFunc("POST /ollama/api/generate", func(w http.ResponseWriter, r *http.Request) {
+		if !allowed(r) {
+			writeError(w, http.StatusForbidden, "request not from the dashboard")
+			return
+		}
+		p.forward(w, r, "/api/generate", CheckGenerate)
 	})
 }
 
@@ -130,18 +138,38 @@ func CheckChat(body []byte) error {
 	return nil
 }
 
-func (p *Proxy) chat(w http.ResponseWriter, r *http.Request) {
+// CheckGenerate validates a completion request: a JSON object naming a
+// model, with a prompt. (Loom sends the code before and after the cursor.)
+func CheckGenerate(body []byte) error {
+	var req struct {
+		Model  string  `json:"model"`
+		Prompt *string `json:"prompt"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return fmt.Errorf("the request must be JSON: %v", err)
+	}
+	if !modelRe.MatchString(req.Model) {
+		return fmt.Errorf("not a model name: %q", req.Model)
+	}
+	if req.Prompt == nil {
+		return fmt.Errorf("the request has no prompt")
+	}
+	return nil
+}
+
+// forward checks a POST and passes it on to Ollama's `path`, streaming the answer back.
+func (p *Proxy) forward(w http.ResponseWriter, r *http.Request, path string, check func([]byte) error) {
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxBody))
 	if err != nil {
 		writeError(w, http.StatusRequestEntityTooLarge, "the conversation is too long to send (8 MB at most); start a new one")
 		return
 	}
-	if err := CheckChat(body); err != nil {
+	if err := check(body); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	// A fresh request: the browser's Origin, cookies and other headers stay here.
-	req, _ := http.NewRequestWithContext(r.Context(), "POST", p.base.String()+"/api/chat", bytes.NewReader(body))
+	req, _ := http.NewRequestWithContext(r.Context(), "POST", p.base.String()+path, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := p.client.Do(req)
 	if err != nil {
