@@ -20,6 +20,8 @@ func fakeOllama(t *testing.T) (*httptest.Server, *http.Request) {
 			io.WriteString(w, `{"version":"0.32.1"}`)
 		case "/api/tags":
 			io.WriteString(w, `{"models":[{"name":"qwen3-coder:30b"}]}`)
+		case "/api/ps":
+			io.WriteString(w, `{"models":[{"name":"qwen3-coder:30b","size":19000000000,"size_vram":12000000000}]}`)
 		case "/api/chat":
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			io.WriteString(w, `{"message":{"content":"Hi"}}`+"\n")
@@ -59,6 +61,9 @@ func TestPassesVersionAndTags(t *testing.T) {
 	h := handler(t, o.URL)
 	if rec := call(h, "GET", "/ollama/api/tags", "", nil); rec.Code != 200 || !strings.Contains(rec.Body.String(), "qwen3-coder") {
 		t.Errorf("tags: %d %s", rec.Code, rec.Body)
+	}
+	if rec := call(h, "GET", "/ollama/api/ps", "", nil); rec.Code != 200 || !strings.Contains(rec.Body.String(), "size_vram") {
+		t.Errorf("ps: %d %s", rec.Code, rec.Body.String())
 	}
 	if rec := call(h, "GET", "/ollama/api/version", "", nil); !strings.Contains(rec.Body.String(), "0.32.1") {
 		t.Errorf("version: %s", rec.Body)
@@ -141,7 +146,7 @@ func TestBaseAddressOpensThePage(t *testing.T) {
 		}
 	}
 	// Only the base itself: other paths under it still aren't passed on.
-	if rec := call(h, "GET", "/ollama/api/ps", "", nil); rec.Code == http.StatusFound || rec.Code == http.StatusOK {
-		t.Errorf("GET /ollama/api/ps answered %d", rec.Code)
+	if rec := call(h, "GET", "/ollama/api/show", "", nil); rec.Code == http.StatusFound || rec.Code == http.StatusOK {
+		t.Errorf("GET /ollama/api/show answered %d", rec.Code)
 	}
 }

@@ -1,0 +1,24 @@
+/* The PC's load (monitor.js): the live strip on the chat page, and warnings. */
+
+.hb-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 8px 24px; background: var(--surface); border-bottom: 1px solid var(--border); font-size: 12px; }
+.hb-meter { display: flex; align-items: center; gap: 6px; }
+.hb-label { color: var(--muted); font-weight: 600; }
+.hb-bar { width: 56px; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.hb-fill { display: block; height: 100%; border-radius: 3px; background: var(--ok); transition: width 0.4s ease; }
+.hb-warn .hb-fill { background: var(--warn); }
+.hb-bad .hb-fill { background: var(--bad); }
+.hb-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hb-temp { font-variant-numeric: tabular-nums; }
+.hb-temp.hb-warn, .hb-model.hb-warn { color: var(--warn); }
+.hb-temp.hb-bad { color: var(--bad); }
+.hb-model { margin-left: auto; color: var(--muted); }
+.hb-model.hb-ok { color: var(--ok); }
+
+.hb-alerts { position: fixed; right: 16px; bottom: 16px; z-index: 10; display: flex; flex-direction: column; gap: 8px; width: min(380px, calc(100vw - 32px)); }
+.hb-alert { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 12px; border-radius: 10px; background: var(--surface); border: 1px solid color-mix(in srgb, var(--warn) 55%, var(--border)); border-left: 4px solid var(--warn); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); font-size: 13px; }
+.hb-alert strong { grid-column: 1; }
+.hb-alert p { grid-column: 1; margin: 0; color: var(--muted); }
+.hb-alert-close { grid-column: 2; grid-row: 1 / span 2; align-self: start; font-size: 12px; padding: 2px 8px; }
+@media (prefers-reduced-motion: reduce) { .hb-fill { transition: none; } }
+@media (max-width: 600px) { .hb-strip { padding: 8px 16px; } .hb-model { margin-left: 0; } }
+.chat-page .hb-alerts { bottom: 150px; } /* above the message box */

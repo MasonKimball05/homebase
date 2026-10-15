@@ -31,6 +31,9 @@ type Point struct {
 	At         time.Time `json:"at"`
 	CPUPercent float64   `json:"cpu_percent"`
 	MemPercent float64   `json:"mem_percent"`
+	// The first GPU's load and memory, when there is one (see gpu.go).
+	GPUPercent  *float64 `json:"gpu_percent,omitempty"`
+	VRAMPercent *float64 `json:"vram_percent,omitempty"`
 }
 
 // Snapshot is the latest reading.
@@ -41,7 +44,8 @@ type Snapshot struct {
 	MemTotalBytes uint64              `json:"mem_total_bytes"`
 	Cores         int                 `json:"cores"` // logical processors
 	Apps          map[string]AppUsage `json:"apps"`
-	History       []Point             `json:"history"` // oldest first
+	GPUs          []GPU               `json:"gpus,omitempty"` // NVIDIA cards, if any
+	History       []Point             `json:"history"`        // oldest first
 }
 
 // ---- what a platform provides ----
@@ -83,6 +87,9 @@ type Sampler struct {
 	every time.Duration
 	cores int
 	now   func() time.Time
+	gpu   func() ([]GPU, error)
+	// No NVIDIA GPU: don't run nvidia-smi every few seconds just to fail.
+	gpuOff bool
 
 	mu      sync.Mutex
 	prevSys cpuTimes
@@ -103,7 +110,7 @@ func NewSampler(roots func() map[string]uint32, every time.Duration) *Sampler {
 }
 
 func newSampler(p platform, roots func() map[string]uint32, every time.Duration) *Sampler {
-	return &Sampler{plat: p, roots: roots, every: every, cores: runtime.NumCPU(), now: time.Now}
+	return &Sampler{plat: p, roots: roots, every: every, cores: runtime.NumCPU(), now: time.Now, gpu: readGPUs}
 }
 
 // Run samples until ctx is done. On an unsupported OS it returns at once.
@@ -145,6 +152,15 @@ func (s *Sampler) sample() {
 	if err != nil {
 		return
 	}
+	// Outside the lock: nvidia-smi takes a moment. Only Run's goroutine gets here.
+	var gpus []GPU
+	if !s.gpuOff && s.gpu != nil {
+		var gerr error
+		gpus, gerr = s.gpu()
+		if errors.Is(gerr, errNoGPU) {
+			s.gpuOff = true
+		}
+	}
 	at := s.now()
 
 	s.mu.Lock()
@@ -153,7 +169,7 @@ func (s *Sampler) sample() {
 	first := s.prevAt.IsZero()
 	wall := at.Sub(s.prevAt)
 	snap := Snapshot{
-		At: at, Cores: s.cores, MemTotalBytes: mem.Total, Apps: map[string]AppUsage{},
+		At: at, Cores: s.cores, MemTotalBytes: mem.Total, Apps: map[string]AppUsage{}, GPUs: gpus,
 	}
 	if mem.Total >= mem.Available {
 		snap.MemUsedBytes = mem.Total - mem.Available
@@ -202,7 +218,12 @@ func (s *Sampler) sample() {
 	if mem.Total > 0 {
 		memPct = float64(snap.MemUsedBytes) / float64(mem.Total) * 100
 	}
-	s.history = append(s.history, Point{At: at, CPUPercent: snap.CPUPercent, MemPercent: memPct})
+	point := Point{At: at, CPUPercent: snap.CPUPercent, MemPercent: memPct}
+	if len(gpus) > 0 {
+		util, vram := gpus[0].UtilPercent, gpus[0].VRAMPercent()
+		point.GPUPercent, point.VRAMPercent = &util, &vram
+	}
+	s.history = append(s.history, point)
 	if len(s.history) > HistoryLength {
 		s.history = s.history[len(s.history)-HistoryLength:]
 	}

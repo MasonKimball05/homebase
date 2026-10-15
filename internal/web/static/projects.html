@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Projects · homebase</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="projects.css">
+  <script src="projects.js" defer></script>
+</head>
+<body class="projects-page">
+  <header class="bar">
+    <div class="brand">
+      <a href="./" class="back" title="Back to the dashboard">homebase</a>
+      <span class="muted">/</span>
+      <h1>Projects</h1>
+    </div>
+    <label class="live muted small" title="Check for changes every few seconds">
+      <input type="checkbox" id="live" checked> Live <span id="updated"></span>
+    </label>
+  </header>
+
+  <div class="projects-layout">
+    <nav class="project-list" aria-label="Projects">
+      <ul id="projects"></ul>
+    </nav>
+
+    <main class="project-view" id="view">
+      <div id="error" class="banner" hidden></div>
+      <p class="muted" id="placeholder">Pick a project. The ones changed most recently are at the top.</p>
+
+      <section id="project" hidden>
+        <div class="project-head">
+          <h2 id="p-name"></h2>
+          <span class="branch" id="p-branch"></span>
+          <span class="muted small" id="p-commit"></span>
+        </div>
+        <div class="tabs" role="tablist">
+          <a role="tab" id="tab-changes" href="#">Changes <span class="count" id="p-count"></span></a>
+          <a role="tab" id="tab-files" href="#">Files</a>
+        </div>
+
+        <div id="changes" class="changes"></div>
+
+        <div id="files" hidden>
+          <nav class="crumbs" id="crumbs" aria-label="Folder"></nav>
+          <table class="entries">
+            <tbody id="entries"></tbody>
+          </table>
+          <div id="viewer" class="viewer" hidden>
+            <div class="viewer-head">
+              <span id="v-path"></span>
+              <span class="muted small" id="v-meta"></span>
+            </div>
+            <p class="muted" id="v-note" hidden></p>
+            <pre id="v-text" class="code"></pre>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

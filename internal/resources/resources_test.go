@@ -30,6 +30,7 @@ func newTestSampler(f *fake) (*Sampler, *time.Time) {
 	s := newSampler(f, func() map[string]uint32 { return map[string]uint32{"web": 100} }, time.Second)
 	s.cores = 4
 	s.now = func() time.Time { return now }
+	s.gpu = nil // no GPU unless a test sets one
 	return s, &now
 }
 

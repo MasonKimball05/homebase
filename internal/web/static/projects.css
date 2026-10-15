@@ -1,0 +1,84 @@
+/* The Projects page: what changed in this PC's git projects. Read-only. */
+
+.back { color: var(--text); text-decoration: none; font-weight: 700; font-size: 18px; }
+.back:hover { color: var(--accent); }
+.small { font-size: 12px; }
+/* Layout rules (display: flex/grid) would otherwise beat the hidden attribute. */
+[hidden] { display: none !important; }
+.live { margin-left: auto; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+
+.projects-layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); min-height: calc(100vh - 57px); }
+.project-list { border-right: 1px solid var(--border); background: var(--surface); overflow-y: auto; max-height: calc(100vh - 57px); position: sticky; top: 57px; }
+.project-list ul { list-style: none; margin: 0; padding: 6px; }
+.project-list a { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; padding: 8px 10px; border-radius: 8px; color: var(--text); text-decoration: none; }
+.project-list a:hover { background: var(--surface-2); }
+.project-list a[aria-current="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.project-list .p-name { font-weight: 600; overflow-wrap: anywhere; }
+.project-list .p-when { grid-column: 1; font-size: 12px; color: var(--muted); }
+.project-list .p-changed { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; color: var(--warn); background: color-mix(in srgb, var(--warn) 15%, transparent); }
+
+.project-view { max-width: none; width: 100%; margin: 0; padding: 20px 24px 40px; min-width: 0; }
+.project-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.project-head h2 { margin: 0; font-size: 20px; }
+.branch { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); }
+.tabs { display: flex; gap: 4px; margin: 14px 0 12px; border-bottom: 1px solid var(--border); }
+.tabs a { padding: 8px 12px; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 600; }
+.tabs a[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.count { font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+
+/* Changes */
+.changes { display: flex; flex-direction: column; gap: 10px; }
+.file-change { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.file-change > summary { display: flex; align-items: center; gap: 10px; padding: 8px 12px; cursor: pointer; list-style: none; }
+.file-change > summary::-webkit-details-marker { display: none; }
+.file-change > summary::before { content: "▸"; color: var(--muted); transition: transform 0.15s; }
+.file-change[open] > summary::before { transform: rotate(90deg); }
+.fc-path { font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; flex: 1; }
+.fc-stat { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: nowrap; }
+.fc-stat .add { color: var(--ok); }
+.fc-stat .del { color: var(--bad); }
+.kind { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; text-transform: lowercase; }
+.kind-new, .kind-added { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.kind-modified, .kind-renamed { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.kind-deleted { color: var(--bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.fc-note { margin: 0; padding: 10px 14px; color: var(--muted); border-top: 1px solid var(--border); }
+.open-file { font-size: 12px; color: var(--accent); text-decoration: none; }
+.open-file:hover { text-decoration: underline; }
+
+.diff { margin: 0; border-top: 1px solid var(--border); overflow-x: auto; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.diff div { padding: 0 12px; white-space: pre; min-width: max-content; }
+.diff .d-add { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.diff .d-del { background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.diff .d-hunk { color: var(--muted); background: var(--surface-2); }
+.diff .d-file { color: var(--muted); }
+
+/* Files */
+.crumbs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 8px; font-size: 13px; }
+.crumbs a { color: var(--accent); text-decoration: none; }
+.crumbs a:hover { text-decoration: underline; }
+.entries { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.entries td { padding: 6px 12px; border-bottom: 1px solid var(--border); }
+.entries tr:last-child td { border-bottom: none; }
+.entries a { color: var(--text); text-decoration: none; }
+.entries a:hover { color: var(--accent); }
+.entries .e-dir a { font-weight: 600; }
+.entries .e-dir a::before { content: "▸ "; color: var(--muted); }
+.entries .e-meta { color: var(--muted); font-size: 12px; text-align: right; white-space: nowrap; }
+.dot-changed { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); margin-left: 6px; vertical-align: 1px; }
+.dot-new { background: var(--ok); }
+.dot-deleted { background: var(--bad); }
+
+.viewer { margin-top: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.viewer-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--border); font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+#v-note { padding: 10px 12px; margin: 0; }
+.code { margin: 0; overflow-x: auto; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; counter-reset: line; }
+.code span { display: block; padding-right: 12px; white-space: pre; min-width: max-content; }
+.code span::before { counter-increment: line; content: counter(line); display: inline-block; width: 3.5em; padding-right: 12px; text-align: right; color: var(--muted); user-select: none; }
+
+@media (max-width: 760px) {
+  .projects-layout { grid-template-columns: 1fr; }
+  .project-list { position: static; max-height: 220px; border-right: none; border-bottom: 1px solid var(--border); }
+  .project-view { padding: 16px; }
+  .entries .e-meta:last-child { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .file-change > summary::before { transition: none; } }

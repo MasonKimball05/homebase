@@ -67,6 +67,7 @@ type Status struct {
 	MemoryBytes   int64      `json:"memory_bytes,omitempty"`
 	NextRestartAt *time.Time `json:"next_restart_at,omitempty"`
 	Autostart     bool       `json:"autostart"`
+	ExternalOK    bool       `json:"external_ok,omitempty"` // running outside homebase is normal for it
 }
 
 type action int
@@ -113,13 +114,21 @@ func NewApp(cfg config.App, logDir string) *App {
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 		timing: defaultTiming,
-		st:     Status{Name: cfg.Name, Title: cfg.Title, URL: cfg.URL, State: Stopped, Autostart: cfg.Autostart},
+		st:     Status{Name: cfg.Name, Title: cfg.Title, URL: cfg.URL, State: Stopped, Autostart: cfg.Autostart, ExternalOK: cfg.ExternalOK},
 	}
 }
 
 func (a *App) Name() string { return a.cfg.Name }
 
 // Status returns a copy, safe to use after the lock is released.
+// externalMessage explains an app that's running but not started by homebase.
+func (a *App) externalMessage() string {
+	if a.cfg.ExternalOK {
+		return "Running from its own app, as usual. Homebase watches it, shows its log, and starts it if it stops."
+	}
+	return "Already running outside homebase. Stop that copy (or disable its old startup task), then press Start."
+}
+
 func (a *App) Status() Status {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -162,6 +171,9 @@ type exitResult struct {
 
 // Run supervises the app until ctx is cancelled, then stops it.
 func (a *App) Run(ctx context.Context) {
+	if a.cfg.LogFile != "" {
+		go followFile(ctx, a.cfg.LogFile, a.Logs, time.Second)
+	}
 	var (
 		proc      *exec.Cmd
 		exited    chan exitResult // receives once when proc exits
@@ -192,7 +204,7 @@ func (a *App) Run(ctx context.Context) {
 			if h := a.probe(ctx); h.OK {
 				a.update(func(s *Status) {
 					s.State, s.Health = External, &h
-					s.Message = "Already running outside homebase. Stop that copy (or disable its old startup task), then press Start."
+					s.Message = a.externalMessage()
 				})
 				a.Logs.Sysf("not starting: something already answers at %s", a.cfg.Health)
 				return
@@ -519,6 +531,9 @@ func (a *App) checkOnce(ctx context.Context) {
 		case (s.State == Stopped || s.State == Crashed) && s.PID == 0 && h.OK:
 			s.State = External
 			s.Message = "Running, but not started by homebase."
+			if a.cfg.ExternalOK {
+				s.Message = a.externalMessage()
+			}
 		case s.State == External && !h.OK:
 			s.State, s.Message = Stopped, ""
 			notify = actExternalGone

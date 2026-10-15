@@ -4,7 +4,7 @@ const LOG_POLL_MS = 1500;
 
 const LABELS = {
   running: "Running", starting: "Starting", stopping: "Stopping", stopped: "Stopped",
-  backoff: "Restarting", crashed: "Crashed", external: "External",
+  backoff: "Restarting", crashed: "Crashed", external: "External", "external-ok": "Running (own app)",
   unhealthy: "Unhealthy", recovering: "Recovering",
 };
 
@@ -31,6 +31,7 @@ async function refresh() {
 // fails is "unhealthy", and one that came back from a crash less than a
 // minute ago is "recovering" (so a crash loop doesn't look green).
 function visualState(app) {
+  if (app.state === "external" && app.external_ok) return "external-ok";
   if (app.state === "running" && app.health && !app.health.ok) return "unhealthy";
   if (app.state === "running" && app.last_exit && !app.last_exit.requested && app.last_exit.code !== 0 && app.started_at &&
       Date.now() - Date.parse(app.started_at) < 60_000) return "recovering";
@@ -42,7 +43,7 @@ function render(data) {
   renderMachine(data);
   el("host").textContent = data.host ? `on ${data.host}` : "";
   const states = data.apps.map(visualState);
-  const up = states.filter((s) => s === "running").length;
+  const up = states.filter((s) => s === "running" || s === "external-ok").length;
   const problems = states.filter((s) => ["crashed", "backoff", "unhealthy", "recovering"].includes(s)).length;
   el("summary").textContent =
     `${up}/${data.apps.length} running` + (problems ? ` · ${problems} need attention` : "") +
@@ -109,7 +110,8 @@ function card(app) {
   const busy = pending.has(app.name) || ["starting", "stopping"].includes(app.state);
   const owned = app.pid > 0 || ["backoff", "starting"].includes(app.state);
   const buttons = {
-    start: !busy && !owned,
+    // An app that normally runs from its own program is already up: Start would only collide with it.
+    start: !busy && !owned && !(app.state === "external" && app.external_ok),
     restart: !busy && app.state !== "external",
     stop: !busy && (owned || app.state === "backoff"),
   };
@@ -287,6 +289,14 @@ function ago(iso) {
 el("logs-close").addEventListener("click", closeLogs);
 refresh();
 setInterval(refresh, POLL_MS);
+
+// The Projects page link, when homebase.json has a "projects" section (see internal/projects).
+fetch("api/projects")
+  .then((r) => r.json())
+  .then((info) => {
+    if (info.enabled) el("projects-link").hidden = false;
+  })
+  .catch(() => {});
 
 // The chat page link, when homebase.json has an "ai" section (see internal/ai).
 fetch("api/ai")

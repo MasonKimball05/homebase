@@ -79,6 +79,17 @@ schtasks /End /TN homebase; schtasks /Run /TN homebase
 instead of being silently ignored. The desktop's real config is in
 [`deploy/homebase.json`](deploy/homebase.json).
 
+**Apps that usually run on their own** (Ollama, started by its tray app):
+homebase shows them as "external" instead of starting a second copy. Two
+optional keys make that tidy:
+
+- `"log_file"`: a log the program writes itself, shown in the card's Logs
+  panel (`"${LOCALAPPDATA}\\Ollama\\server.log"`; `${VAR}`s are expanded).
+  Homebase follows it, including after the program rotates it.
+- `"external_ok": true`: running outside homebase is normal for this app, so
+  the card is green ("Running (own app)") rather than asking you to stop the
+  other copy. If it isn't running at all, homebase starts it as usual.
+
 ## Phone alerts
 
 | Event | When | Priority |
@@ -151,6 +162,42 @@ cookies) aren't passed on.
 Without an `"ai"` section nothing changes: the link stays hidden and the
 `/ollama/` routes don't exist.
 
+**Watching the PC's load.** The chat page has a live strip: GPU load, VRAM,
+the GPU's temperature, RAM, CPU, and the loaded model with how much of it
+fits on the GPU (from Ollama's `/api/ps`). GPU readings come from
+`nvidia-smi`, which NVIDIA's driver installs; without it they're left out.
+The chat, dashboard and Local AI pages also show a warning in the corner
+when, for a couple of readings in a row, VRAM is over 95%, RAM over 90%, the
+CPU over 95%, the GPU at 85°C or more, or a model doesn't fit on the GPU (it
+then runs partly from system RAM, much slower). Warnings clear by themselves
+once things settle; Dismiss hides one until it happens again. The limits are
+at the top of `internal/web/static/monitor.js`.
+
+## Projects: what changed on the desktop
+
+To check on work done on the desktop while you're elsewhere (what Qwen
+changed through Loom there, say), add the folders your git projects live in:
+
+```jsonc
+"projects": {
+  "roots": ["C:\\Users\\Admin\\projects", "C:\\Users\\Admin\\Documents\\GitHub"]
+}
+```
+
+The dashboard then links to `projects.html`: every git repository directly
+inside those folders, the most recently changed first, each with a
+**Changes** tab (a diff of every file changed since the last commit, new
+files included) and a **Files** tab (the folder tree with changed files
+marked, and a viewer with line numbers). With Live on it checks every 5
+seconds, so you can watch a change happen. The address says where you are
+(`#loom/files/src`), so Back works and you can bookmark a project.
+
+It's read-only: every route is a GET and nothing writes. A path can't leave
+its project (`..`, absolute paths, drive letters, symlinks out and `.git`
+are refused), and files that usually hold secrets (`.env` files, private
+keys, `*.env`) are listed but their contents are never sent. Code lives in
+`internal/projects`.
+
 ## Install on the desktop
 
 The desktop keeps a clone of this repo in `C:\Users\Admin\projects\homebase`
@@ -208,6 +255,9 @@ config: edit it here, push, and `make update APP=homebase`.
   `Sec-Fetch-Site`, so another website open in your browser can't press the
   buttons for you (CSRF). `GET` requests never change anything.
 - App output is rendered as text only (never HTML), under a strict CSP.
+- The Projects page shows source code, so it's only as private as the
+  dashboard (Tailscale only). It can't change anything, can't read outside
+  the configured project folders, and never sends secret-looking files.
 - Secrets live in `env_file`s outside the repo. Env-file parse errors never
   echo the line, since it may contain a key.
 - Apps run as a normal user, not elevated.

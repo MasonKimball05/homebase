@@ -61,7 +61,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 24px; }
 .state { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 
 .dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--idle); }
-.dot[data-state="running"] { background: var(--ok); }
+.dot[data-state="running"], .dot[data-state="external-ok"] { background: var(--ok); }
 .dot[data-state="starting"], .dot[data-state="stopping"], .dot[data-state="backoff"], .dot[data-state="external"], .dot[data-state="unhealthy"], .dot[data-state="recovering"] { background: var(--warn); }
 .dot[data-state="crashed"] { background: var(--bad); box-shadow: 0 0 0 4px color-mix(in srgb, var(--bad) 20%, transparent); }
 #overall { width: 12px; height: 12px; }

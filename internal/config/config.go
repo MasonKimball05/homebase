@@ -24,8 +24,16 @@ type Config struct {
 	Alerts Alerts `json:"alerts"`
 	// AI, when present, lets the dashboard (and Loom on another machine)
 	// chat with models served by Ollama on this PC. See internal/ai.
-	AI   *AI   `json:"ai,omitempty"`
-	Apps []App `json:"apps"`
+	AI *AI `json:"ai,omitempty"`
+	// Projects, when present, adds a read-only Projects page: the git repos
+	// in these folders, what changed in them, and their files. See internal/projects.
+	Projects *Projects `json:"projects,omitempty"`
+	Apps     []App     `json:"apps"`
+}
+
+// Projects lists the folders whose git repos the Projects page shows.
+type Projects struct {
+	Roots []string `json:"roots"`
 }
 
 // AI points homebase at an Ollama server. Ollama itself stays on 127.0.0.1;
@@ -110,6 +118,15 @@ type App struct {
 	// Health is polled to decide up/down; usually the same app on 127.0.0.1.
 	URL    string `json:"url"`
 	Health string `json:"health"`
+
+	// LogFile is a log another program writes for this app, shown in its
+	// Logs panel: for apps that usually run outside homebase (Ollama's tray
+	// app logs to ${LOCALAPPDATA}\Ollama\server.log). ${VAR}s are expanded.
+	LogFile string `json:"log_file,omitempty"`
+	// ExternalOK: running outside homebase is this app's normal state (Ollama
+	// runs from its tray app), so show that as healthy rather than as a
+	// duplicate to clean up. Homebase still starts it when it isn't running.
+	ExternalOK bool `json:"external_ok,omitempty"`
 
 	Autostart bool `json:"autostart"`
 	// Restart: "on-failure" (default), "always", or "never".
@@ -199,6 +216,15 @@ func Parse(data []byte, baseDir string) (Config, error) {
 		}
 	}
 
+	if p := cfg.Projects; p != nil {
+		if len(p.Roots) == 0 {
+			return Config{}, fmt.Errorf("projects.roots needs at least one folder")
+		}
+		for i, r := range p.Roots {
+			p.Roots[i] = resolve(baseDir, os.ExpandEnv(r))
+		}
+	}
+
 	seen := map[string]bool{}
 	for i := range cfg.Apps {
 		a := &cfg.Apps[i]
@@ -245,6 +271,9 @@ func Parse(data []byte, baseDir string) (Config, error) {
 				return Config{}, fmt.Errorf("app %q: source needs both repo_dir and build", a.Name)
 			}
 			src.RepoDir = resolve(baseDir, src.RepoDir)
+		}
+		if a.LogFile != "" {
+			a.LogFile = resolve(baseDir, os.ExpandEnv(a.LogFile))
 		}
 		if a.RestartWhenUnhealthy && a.Health == "" {
 			return Config{}, fmt.Errorf("app %q: restart_when_unhealthy needs a health URL", a.Name)

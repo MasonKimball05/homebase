@@ -24,11 +24,12 @@ type AIRoutes interface {
 }
 
 type Server struct {
-	mgr     *supervisor.Manager
-	ai      AIRoutes
-	usage   func() (resources.Snapshot, bool) // optional: CPU and memory readings
-	host    string
-	started time.Time
+	mgr      *supervisor.Manager
+	ai       AIRoutes
+	projects AIRoutes                          // the read-only Projects page's API (internal/projects)
+	usage    func() (resources.Snapshot, bool) // optional: CPU and memory readings
+	host     string
+	started  time.Time
 }
 
 func New(mgr *supervisor.Manager) *Server {
@@ -39,6 +40,12 @@ func New(mgr *supervisor.Manager) *Server {
 // WithResources adds machine and per-app CPU/memory readings to /api/status.
 func (s *Server) WithResources(latest func() (resources.Snapshot, bool)) *Server {
 	s.usage = latest
+	return s
+}
+
+// WithProjects adds the read-only Projects page's API (see internal/projects).
+func (s *Server) WithProjects(p AIRoutes) *Server {
+	s.projects = p
 	return s
 }
 
@@ -55,6 +62,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/status", s.status)
 	mux.HandleFunc("GET /api/apps/{name}/logs", s.logs)
 	mux.HandleFunc("POST /api/apps/{name}/{action}", s.act)
+	if s.projects != nil {
+		s.projects.Register(mux, fromDashboard)
+	} else {
+		mux.HandleFunc("GET /api/projects", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]bool{"enabled": false})
+		})
+	}
 	if s.ai != nil {
 		s.ai.Register(mux, fromDashboard)
 	} else {

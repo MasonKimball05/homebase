@@ -6,8 +6,10 @@
   <title>Local AI · homebase</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="monitor.css">
   <link rel="stylesheet" href="ai.css">
   <script src="ai.js" defer></script>
+  <script src="monitor.js" defer></script>
 </head>
 <body>
   <header class="bar">
@@ -57,10 +59,11 @@
 
     <section class="panel" aria-labelledby="api-title">
       <h2 id="api-title">Use it from other tools</h2>
-      <p>Anything that speaks Ollama's API and lets you set a base URL can use it. Homebase passes on three endpoints:</p>
+      <p>Anything that speaks Ollama's API and lets you set a base URL can use it. Homebase passes on four endpoints:</p>
       <dl class="endpoints">
         <dt><code>GET <span class="base"></span>/api/version</code></dt><dd>Ollama's version: is it up</dd>
         <dt><code>GET <span class="base"></span>/api/tags</code></dt><dd>The models on this PC</dd>
+        <dt><code>GET <span class="base"></span>/api/ps</code></dt><dd>Which are loaded now, and how much is on the GPU</dd>
         <dt><code>POST <span class="base"></span>/api/chat</code></dt><dd>A chat, streamed. Send the header <code>X-Homebase: 1</code>; browsers on other sites are refused.</dd>
       </dl>
       <p class="small muted">Try it from a terminal:</p>

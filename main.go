@@ -21,6 +21,7 @@ import (
 	"github.com/MasonKimball05/homebase/internal/ai"
 	"github.com/MasonKimball05/homebase/internal/alerts"
 	"github.com/MasonKimball05/homebase/internal/config"
+	"github.com/MasonKimball05/homebase/internal/projects"
 	"github.com/MasonKimball05/homebase/internal/resources"
 	"github.com/MasonKimball05/homebase/internal/supervisor"
 	"github.com/MasonKimball05/homebase/internal/web"
@@ -204,6 +205,10 @@ func run(configPath string) error {
 			return err
 		}
 		dash = dash.WithAI(proxy)
+	}
+	if cfg.Projects != nil {
+		// Read-only: see what changed in this PC's projects from another machine.
+		dash = dash.WithProjects(projects.New(cfg.Projects.Roots))
 	}
 	srv := &http.Server{Handler: dash.Handler(), ReadHeaderTimeout: 5 * time.Second}
 	go func() {

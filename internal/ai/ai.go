@@ -2,10 +2,11 @@
 // Ollama serves on this PC.
 //
 // Ollama has no login of its own, so it stays bound to 127.0.0.1 and homebase
-// passes on exactly three of its endpoints under /ollama/:
+// passes on exactly four of its endpoints under /ollama/:
 //
 //	GET  /ollama/api/version   is it there
 //	GET  /ollama/api/tags      which models are pulled
+//	GET  /ollama/api/ps        which are loaded, and how much sits in VRAM
 //	POST /ollama/api/chat      a (streamed) chat request
 //
 // Nothing that pulls, deletes, copies or creates models is reachable. A chat
@@ -79,6 +80,7 @@ func (p *Proxy) Register(mux *http.ServeMux, allowed func(*http.Request) bool) {
 	}
 	mux.HandleFunc("GET /ollama/api/version", p.passGet("/api/version"))
 	mux.HandleFunc("GET /ollama/api/tags", p.passGet("/api/tags"))
+	mux.HandleFunc("GET /ollama/api/ps", p.passGet("/api/ps"))
 	mux.HandleFunc("POST /ollama/api/chat", func(w http.ResponseWriter, r *http.Request) {
 		if !allowed(r) {
 			writeError(w, http.StatusForbidden, "request not from the dashboard")

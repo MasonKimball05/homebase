@@ -10,6 +10,9 @@
     "ollama": "http://127.0.0.1:11434",
     "default_model": "qwen3-coder:30b"
   },
+  "projects": {
+    "roots": ["C:\\Users\\Admin\\projects", "C:\\Users\\Admin\\Documents\\GitHub"]
+  },
   "apps": [
     {
       "name": "jobtracker",
@@ -90,6 +93,18 @@
         "repo_dir": "C:\\Users\\Admin\\projects\\krakenlite",
         "build": ["python", "-m", "py_compile", "server.py"]
       }
+    },
+    {
+      "name": "ollama",
+      "title": "Ollama (Qwen and other local models)",
+      "dir": "C:\\Users\\Admin\\AppData\\Local\\Programs\\Ollama",
+      "command": "ollama.exe",
+      "args": ["serve"],
+      "url": "http://arkans-pc1:8090/ai.html",
+      "health": "http://127.0.0.1:11434/api/version",
+      "log_file": "${LOCALAPPDATA}\\Ollama\\server.log",
+      "external_ok": true,
+      "autostart": true
     }
   ]
 }
