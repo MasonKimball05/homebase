@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat · homebase</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="chat.css">
+  <script src="chat.js" defer></script>
+</head>
+<body class="chat-page">
+  <header class="bar">
+    <div class="brand">
+      <a href="./" class="back" title="Back to the dashboard">homebase</a>
+      <span class="muted">/</span>
+      <h1>Chat</h1>
+    </div>
+    <div class="chat-tools">
+      <select id="model" aria-label="Model"></select>
+      <button type="button" id="new">New chat</button>
+    </div>
+  </header>
+
+  <main class="chat-main">
+    <div id="error" class="banner" hidden></div>
+    <section id="transcript" class="transcript" aria-live="polite">
+      <div class="empty muted" id="empty">
+        <p>Chat with the models Ollama runs on this PC's GPU. Nothing leaves your machines.</p>
+        <p class="small">Conversations are kept in this browser only. To have the model read and edit your code, use Loom's Local AI view with this PC as its server (see the README).</p>
+      </div>
+    </section>
+  </main>
+
+  <form id="composer" class="composer">
+    <textarea id="input" rows="3" placeholder="Message the model… (Enter sends, Shift+Enter for a new line)" autocomplete="off"></textarea>
+    <div class="composer-foot">
+      <span class="muted small" id="status"></span>
+      <button type="submit" id="send">Send</button>
+    </div>
+  </form>
+</body>
+</html>

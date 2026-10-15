@@ -287,3 +287,14 @@ function ago(iso) {
 el("logs-close").addEventListener("click", closeLogs);
 refresh();
 setInterval(refresh, POLL_MS);
+
+// The chat page link, when homebase.json has an "ai" section (see internal/ai).
+fetch("api/ai")
+  .then((r) => r.json())
+  .then((info) => {
+    if (!info.enabled) return;
+    const a = el("chat-link");
+    if (info.default_model) a.textContent = `Chat with ${info.default_model.split(":")[0]} →`;
+    a.hidden = false;
+  })
+  .catch(() => {});

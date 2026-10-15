@@ -101,3 +101,21 @@ func TestNtfyURLPrecedenceAndValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestAISection(t *testing.T) {
+	cfg, err := Parse([]byte(`{"ai":{"default_model":"qwen3-coder:30b"},"apps":[]}`), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AI == nil || cfg.AI.Ollama != "http://127.0.0.1:11434" || cfg.AI.DefaultModel != "qwen3-coder:30b" {
+		t.Errorf("ai defaults: %+v", cfg.AI)
+	}
+	if cfg, _ := Parse([]byte(`{"apps":[]}`), t.TempDir()); cfg.AI != nil {
+		t.Error("no ai section should mean chat is off")
+	}
+	for _, bad := range []string{`"localhost:11434"`, `"ftp://x"`, `"http://127.0.0.1:11434/api"`} {
+		if _, err := Parse([]byte(`{"ai":{"ollama":`+bad+`},"apps":[]}`), t.TempDir()); err == nil {
+			t.Errorf("ai.ollama %s should be refused", bad)
+		}
+	}
+}

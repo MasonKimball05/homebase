@@ -1,0 +1,44 @@
+/* The chat page: a conversation with a model Ollama runs on this PC. */
+
+.chat-page { display: flex; flex-direction: column; min-height: 100vh; }
+.back { color: var(--text); text-decoration: none; font-weight: 700; font-size: 18px; }
+.back:hover { color: var(--accent); }
+.chat-tools { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.chat-tools select { font: inherit; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); max-width: 60vw; }
+.small { font-size: 12px; }
+
+.chat-main { flex: 1; width: 100%; max-width: 860px; padding-bottom: 12px; }
+.transcript { display: flex; flex-direction: column; gap: 14px; }
+.empty p { margin: 4px 0; }
+
+.msg-user { align-self: flex-end; max-width: 85%; background: var(--surface-2); border: 1px solid var(--border); border-radius: 14px 14px 4px 14px; padding: 8px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg-assistant { line-height: 1.6; overflow-wrap: anywhere; }
+.msg-assistant p, .msg-assistant ul, .msg-assistant ol { margin: 6px 0; }
+.msg-assistant ul, .msg-assistant ol { padding-left: 22px; }
+.msg-assistant h4 { margin: 12px 0 4px; font-size: 15px; }
+.msg-assistant code { font: 0.92em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--surface-2); padding: 1px 4px; border-radius: 4px; }
+.msg-assistant pre { position: relative; margin: 8px 0; padding: 10px 12px; background: var(--log-bg); color: var(--log-text); border-radius: 8px; overflow: auto; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; }
+.msg-assistant pre .copy { position: absolute; top: 6px; right: 6px; padding: 2px 8px; font-size: 11px; background: transparent; color: var(--log-text); border-color: #333a45; }
+.msg-thinking { color: var(--muted); font-size: 13px; }
+.msg-thinking div { white-space: pre-wrap; border-left: 2px solid var(--border); padding-left: 10px; }
+.msg-pending { color: var(--muted); font-style: italic; }
+.msg-stats { color: var(--muted); font-size: 11px; margin-top: 2px; }
+.msg-error { color: var(--bad); white-space: pre-wrap; }
+
+.composer {
+  position: sticky; bottom: 0; width: 100%; max-width: 860px; margin: 0 auto; padding: 10px 24px 16px;
+  background: linear-gradient(to bottom, transparent, var(--bg) 18px);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.composer textarea {
+  width: 100%; resize: vertical; min-height: 56px; max-height: 45vh; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit;
+}
+.composer textarea:focus { outline: none; border-color: var(--accent); }
+.composer-foot { display: flex; justify-content: space-between; align-items: center; }
+#send.stop { border-color: var(--bad); color: var(--bad); }
+
+@media (max-width: 600px) {
+  .composer { padding: 8px 16px 12px; }
+  .chat-tools select { max-width: 45vw; }
+}
