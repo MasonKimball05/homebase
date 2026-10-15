@@ -82,3 +82,26 @@
   .entries .e-meta:last-child { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .file-change > summary::before { transition: none; } }
+
+/* Git buttons */
+.sync { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 10px; }
+.sync-state { font-size: 13px; color: var(--muted); }
+.sync-state .push { color: var(--accent); font-weight: 600; }
+.sync-state .pull { color: var(--warn); font-weight: 600; }
+.sync-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
+.sync-buttons button, .commit-actions button { font-size: 13px; padding: 4px 12px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover:not(:disabled) { color: #fff; filter: brightness(1.08); }
+.commit-form { margin-top: 10px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; gap: 6px; max-width: 640px; }
+.commit-form label { font-weight: 600; font-size: 13px; }
+.commit-form textarea { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); resize: vertical; }
+.commit-form textarea:focus { outline: none; border-color: var(--accent); }
+.commit-form p { margin: 0; }
+.commit-actions { display: flex; gap: 6px; }
+.result { margin-top: 10px; padding: 8px 12px; border-radius: 8px; font-size: 13px; background: color-mix(in srgb, var(--ok) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--ok) 35%, var(--border)); max-width: 820px; }
+.result.bad { background: color-mix(in srgb, var(--bad) 12%, var(--surface)); border-color: color-mix(in srgb, var(--bad) 40%, var(--border)); }
+.result p { margin: 0; }
+.result summary { cursor: pointer; color: var(--muted); margin-top: 4px; font-size: 12px; }
+.result pre { margin: 6px 0 0; padding: 8px 10px; background: var(--log-bg); color: var(--log-text); border-radius: 6px; overflow: auto; max-height: 240px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; }
+.project-list .p-sync { grid-column: 1; font-size: 11px; color: var(--accent); }
+.count:empty { display: none; }

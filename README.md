@@ -192,11 +192,29 @@ marked, and a viewer with line numbers). With Live on it checks every 5
 seconds, so you can watch a change happen. The address says where you are
 (`#loom/files/src`), so Back works and you can bookmark a project.
 
-It's read-only: every route is a GET and nothing writes. A path can't leave
-its project (`..`, absolute paths, drive letters, symlinks out and `.git`
-are refused), and files that usually hold secrets (`.env` files, private
-keys, `*.env`) are listed but their contents are never sent. Code lives in
-`internal/projects`.
+Each project also shows how it stands with its remote ("2 to push · 1 to
+pull", as of the last fetch) and has four git buttons:
+
+- **Fetch** checks the remote for new commits (`git fetch --prune`).
+- **Pull** brings them in, **fast-forward only**: if the desktop and the
+  remote both have new commits it stops and says so, rather than merging
+  on its own. Sort that out in Loom, where you can see any conflicts.
+- **Push** sends the branch's commits to the branch it tracks. Never
+  `--force`; a rejected push says to pull first.
+- **Commit…** commits everything under Changes with your message (`git add
+  -A`). It refuses if a secret-looking file (`.env`, a key) would go in:
+  add it to `.gitignore` first.
+
+Push and Pull ask before they run. Git is never allowed to stop for a
+password: if the desktop has no saved login for a remote, the button says
+so (push once by hand on the desktop and Git Credential Manager remembers
+it). Git's own output is under "Show git output".
+
+Looking is read-only: those routes are GETs. A path can't leave its project
+(`..`, absolute paths, drive letters, symlinks out and `.git` are refused),
+and files that usually hold secrets (`.env` files, private keys, `*.env`) are
+listed but their contents are never sent. Code lives in `internal/projects`
+(the buttons are `actions.go`).
 
 ## Install on the desktop
 
@@ -226,11 +244,23 @@ Dashboard: **http://arkans-pc1:8090/**
 
 ## Updating from git
 
-Make changes on the Mac, commit and push, then:
+Make changes on the Mac, commit and push, then, **from the Mac** (in this
+folder):
 
 ```bash
-make update APP=homebase     # or APP=sentinel / APP=jobtracker
+make update APP=homebase     # or APP=sentinel / APP=jobtracker / APP=krakenlite
 ```
+
+Or **on the desktop** (in PowerShell, e.g. over `ssh desktop`):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\Admin\projects\homebase\scripts\update.ps1 -App homebase
+```
+
+Both run the same script. `ssh desktop` is the alias in `~/.ssh/config` on
+the Mac (`arkans-pc1`, user `admin`). The checkout on the desktop is
+`C:\Users\Admin\projects\homebase`; the running copy is installed in
+`C:\Users\Admin\apps\homebase`.
 
 That runs [`scripts/update.ps1`](scripts/update.ps1) on the desktop over SSH:
 
@@ -256,8 +286,11 @@ config: edit it here, push, and `make update APP=homebase`.
   buttons for you (CSRF). `GET` requests never change anything.
 - App output is rendered as text only (never HTML), under a strict CSP.
 - The Projects page shows source code, so it's only as private as the
-  dashboard (Tailscale only). It can't change anything, can't read outside
-  the configured project folders, and never sends secret-looking files.
+  dashboard (Tailscale only). It can't read outside the configured project
+  folders and never sends secret-looking files. Its only actions are the
+  fixed git buttons (fetch, fast-forward pull, push without force, commit
+  without secret files), behind the same `X-Homebase` check as the app
+  buttons. There's no way to run any other git command from it.
 - Secrets live in `env_file`s outside the repo. Env-file parse errors never
   echo the line, since it may contain a key.
 - Apps run as a normal user, not elevated.

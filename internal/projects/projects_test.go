@@ -204,3 +204,21 @@ func TestACancelledRequestDoesntSpoilTheList(t *testing.T) {
 		t.Fatalf("listing with a cancelled request: %+v", list)
 	}
 }
+
+func TestParseBranchLine(t *testing.T) {
+	cases := map[string]repoStatus{
+		"main...origin/main [ahead 1, behind 2]": {branch: "main", upstream: "origin/main", ahead: 1, behind: 2},
+		"main...origin/main":                     {branch: "main", upstream: "origin/main"},
+		"feature":                                {branch: "feature"},
+		"No commits yet on main":                 {branch: "main"},
+		"old...origin/old [gone]":                {branch: "old", upstream: "origin/old", gone: true},
+		"HEAD (no branch)":                       {branch: "HEAD (no branch)"},
+	}
+	for line, want := range cases {
+		var got repoStatus
+		parseBranchLine(line, &got)
+		if got.branch != want.branch || got.upstream != want.upstream || got.ahead != want.ahead || got.behind != want.behind || got.gone != want.gone {
+			t.Errorf("%q: got %+v, want %+v", line, got, want)
+		}
+	}
+}

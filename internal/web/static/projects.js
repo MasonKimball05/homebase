@@ -69,6 +69,8 @@ async function loadList() {
     a.append(make("span", p.name, "p-name"));
     if (p.changed) a.append(make("span", String(p.changed), "p-changed"));
     a.append(make("span", `${p.changed ? "changed" : "committed"} ${ago(p.last_change)}`, "p-when"));
+    const sync = [p.ahead ? `${p.ahead} to push` : "", p.behind ? `${p.behind} to pull` : ""].filter(Boolean).join(" · ");
+    if (sync) a.append(make("span", sync, "p-sync"));
     const li = make("li");
     li.append(a);
     return li;
@@ -217,6 +219,85 @@ async function showFile(p, path) {
   el("v-text").replaceChildren(...(data.text !== undefined ? text.split("\n").map((l) => make("span", l)) : []));
 }
 
+// ---------------- git buttons ----------------
+
+let busy = false;
+
+function renderSync(p) {
+  const parts = [];
+  if (!p.upstream) parts.push(make("span", "No remote branch"));
+  else if (p.gone) parts.push(make("span", `${p.upstream} was deleted on the remote`));
+  else {
+    parts.push(make("span", p.upstream));
+    if (p.ahead) parts.push(" · ", make("span", `${p.ahead} to push`, "push"));
+    if (p.behind) parts.push(" · ", make("span", `${p.behind} to pull`, "pull"));
+    if (!p.ahead && !p.behind) parts.push(" · in sync");
+    parts.push(` · ${p.last_fetch ? `checked ${ago(p.last_fetch)}` : "never fetched"}`);
+  }
+  el("sync-state").replaceChildren(...parts);
+  const set = (sel, on) => (document.querySelector(sel).disabled = busy || !on);
+  set('[data-git="fetch"]', !!p.upstream);
+  set('[data-git="pull"]', !!p.upstream && !p.gone && p.behind > 0);
+  set('[data-git="push"]', !!p.upstream && !p.gone && p.ahead > 0);
+  set("#commit-open", p.changed > 0);
+}
+
+function showResult(ok, text, output) {
+  el("result").hidden = false;
+  el("result").classList.toggle("bad", !ok);
+  el("result-text").textContent = text;
+  el("result-output").textContent = output || "";
+  el("result-details").hidden = !output;
+  el("result-details").open = false;
+}
+
+const VERB = { fetch: "Fetching…", pull: "Pulling…", push: "Pushing…", commit: "Committing…" };
+
+async function gitAction(action, body) {
+  const p = projects.find((x) => x.id === route().id);
+  if (!p || busy) return;
+  if (action === "push" && !confirm(`Push ${p.ahead} commit${p.ahead === 1 ? "" : "s"} from ${p.name} to ${p.upstream}?`)) return;
+  if (action === "pull" && !confirm(`Pull ${p.behind} commit${p.behind === 1 ? "" : "s"} from ${p.upstream} into ${p.name} on the desktop?`)) return;
+  busy = true;
+  renderSync(p);
+  showResult(true, VERB[action]);
+  el("result").classList.remove("bad");
+  try {
+    const r = await fetch(`api/projects/${encodeURIComponent(p.id)}/git/${action}`, {
+      method: "POST",
+      headers: { "X-Homebase": "1", "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : "{}",
+    });
+    const res = await r.json().catch(() => ({}));
+    showResult(r.ok && res.ok, res.summary || res.error || `HTTP ${r.status}`, res.output);
+    if (r.ok && action === "commit") {
+      el("commit-form").hidden = true;
+      el("commit-message").value = "";
+    }
+  } catch {
+    showResult(false, "Can't reach homebase. Is it still running?");
+  } finally {
+    busy = false;
+    lastChanges = lastTree = lastFile = ""; // the commit changed what's shown
+    await refresh();
+  }
+}
+
+document.querySelectorAll("[data-git]").forEach((b) => b.addEventListener("click", () => gitAction(b.dataset.git)));
+el("commit-open").addEventListener("click", () => {
+  const p = projects.find((x) => x.id === route().id);
+  el("commit-note").textContent = `Commits all ${p?.changed ?? ""} changed file${p?.changed === 1 ? "" : "s"} under Changes (new files too), on ${p?.branch ?? "this branch"}. Pushing is a separate step.`;
+  el("commit-form").hidden = false;
+  el("commit-message").focus();
+});
+el("commit-cancel").addEventListener("click", () => (el("commit-form").hidden = true));
+el("commit-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const message = el("commit-message").value.trim();
+  if (!message) return el("commit-message").focus();
+  gitAction("commit", { message });
+});
+
 // ---------------- putting it together ----------------
 
 let showing = "";
@@ -231,6 +312,10 @@ async function render() {
   const where = `${r.id}|${r.view}|${r.path}`;
   if (where !== showing) {
     // Somewhere new: forget what the last view drew.
+    if (showing.split("|")[0] !== r.id) {
+      el("result").hidden = true;
+      el("commit-form").hidden = true;
+    }
     showing = where;
     lastChanges = lastTree = lastFile = "";
     if (seenFiles !== p.id) seenFiles = null;
@@ -240,6 +325,7 @@ async function render() {
   el("p-branch").hidden = !p.branch;
   el("p-commit").textContent = p.last_commit ? `last commit ${p.last_commit.hash} "${p.last_commit.subject}", ${ago(p.last_commit.when)}` : "no commits yet";
   el("p-count").textContent = p.changed || "";
+  renderSync(p);
   el("tab-changes").href = link(p.id, "changes");
   el("tab-files").href = link(p.id, "files");
   const onChanges = r.view === "changes";

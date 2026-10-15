@@ -36,6 +36,28 @@
           <span class="branch" id="p-branch"></span>
           <span class="muted small" id="p-commit"></span>
         </div>
+        <div class="sync">
+          <span class="sync-state" id="sync-state"></span>
+          <div class="sync-buttons">
+            <button type="button" data-git="fetch" title="Check the remote for new commits (git fetch)">Fetch</button>
+            <button type="button" data-git="pull" title="Bring in the remote's new commits (fast-forward only)">Pull</button>
+            <button type="button" data-git="push" title="Send this branch's commits to its remote">Push</button>
+            <button type="button" id="commit-open" title="Commit every change listed under Changes">Commit…</button>
+          </div>
+        </div>
+        <form id="commit-form" class="commit-form" hidden>
+          <label for="commit-message">Commit message</label>
+          <textarea id="commit-message" rows="3" placeholder="What changed, e.g. Add tax to order totals"></textarea>
+          <p class="small muted" id="commit-note"></p>
+          <div class="commit-actions">
+            <button type="submit" class="primary" id="commit-go">Commit</button>
+            <button type="button" id="commit-cancel">Cancel</button>
+          </div>
+        </form>
+        <div id="result" class="result" hidden>
+          <p id="result-text"></p>
+          <details id="result-details" hidden><summary>Show git output</summary><pre id="result-output"></pre></details>
+        </div>
         <div class="tabs" role="tablist">
           <a role="tab" id="tab-changes" href="#">Changes <span class="count" id="p-count"></span></a>
           <a role="tab" id="tab-files" href="#">Files</a>

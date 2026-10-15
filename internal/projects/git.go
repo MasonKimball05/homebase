@@ -35,8 +35,12 @@ func runGit(ctx context.Context, dir string, args ...string) ([]byte, error) {
 }
 
 type repoStatus struct {
-	branch string
-	files  map[string]string // path ("/"-separated) -> two-letter status, e.g. " M", "??", "A "
+	branch   string
+	upstream string            // e.g. "origin/main"; "" when the branch doesn't track one
+	ahead    int               // commits here that the upstream doesn't have (to push)
+	behind   int               // commits upstream that aren't here (to pull), as of the last fetch
+	gone     bool              // the upstream branch was deleted
+	files    map[string]string // path ("/"-separated) -> two-letter status, e.g. " M", "??", "A "
 }
 
 // status runs `git status` once and parses it.
@@ -55,15 +59,7 @@ func parseStatus(out []byte) repoStatus {
 	for i := 0; i < len(recs); i++ {
 		r := recs[i]
 		if strings.HasPrefix(r, "## ") {
-			br := strings.TrimPrefix(r, "## ")
-			br = strings.TrimPrefix(br, "No commits yet on ")
-			if j := strings.Index(br, "..."); j >= 0 {
-				br = br[:j]
-			}
-			if j := strings.Index(br, " ["); j >= 0 {
-				br = br[:j]
-			}
-			st.branch = br
+			parseBranchLine(strings.TrimPrefix(r, "## "), &st)
 			continue
 		}
 		if len(r) < 4 {
@@ -76,6 +72,26 @@ func parseStatus(out []byte) repoStatus {
 		}
 	}
 	return st
+}
+
+// parseBranchLine reads "main...origin/main [ahead 1, behind 2]" and its
+// variants ("main", "No commits yet on main", "HEAD (no branch)", "[gone]").
+func parseBranchLine(line string, st *repoStatus) {
+	line = strings.TrimPrefix(line, "No commits yet on ")
+	head, track, _ := strings.Cut(line, " [")
+	track = strings.TrimSuffix(track, "]")
+	name, upstream, _ := strings.Cut(head, "...")
+	st.branch, st.upstream = name, upstream
+	for _, part := range strings.Split(track, ", ") {
+		switch {
+		case part == "gone":
+			st.gone = true
+		case strings.HasPrefix(part, "ahead "):
+			st.ahead, _ = strconv.Atoi(strings.TrimPrefix(part, "ahead "))
+		case strings.HasPrefix(part, "behind "):
+			st.behind, _ = strconv.Atoi(strings.TrimPrefix(part, "behind "))
+		}
+	}
 }
 
 func (b *Browser) lastCommit(ctx context.Context, dir string) *Commit {

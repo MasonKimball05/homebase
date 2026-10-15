@@ -3,7 +3,9 @@
 // commit), and the files themselves. It's for checking on work done here
 // while you're away, e.g. what Qwen edited through Loom on the desktop.
 //
-// It's read-only on purpose. Every route is a GET, nothing writes, and:
+// Looking is read-only: those routes are GETs and write nothing. The only
+// exceptions are four git buttons (fetch, pull, push, commit) in actions.go,
+// in fixed forms and behind the dashboard's CSRF check. Also:
 //
 //   - only git repositories directly inside the configured roots are listed,
 //     and a path can't leave its project ("..", absolute paths, drive
@@ -12,12 +14,13 @@
 //     own *.env files) are listed but their contents are never sent
 //   - big or binary files are described, not sent
 //
-// Routes (all GET):
+// Routes:
 //
-//	/api/projects                    the projects, most recently changed first
-//	/api/projects/{id}/changes       uncommitted changes, as unified diffs
-//	/api/projects/{id}/tree?path=    one folder's entries, with git status
-//	/api/projects/{id}/file?path=    one file's text
+//	GET  /api/projects                    the projects, most recently changed first
+//	GET  /api/projects/{id}/changes       uncommitted changes, as unified diffs
+//	GET  /api/projects/{id}/tree?path=    one folder's entries, with git status
+//	GET  /api/projects/{id}/file?path=    one file's text
+//	POST /api/projects/{id}/git/{action}  fetch, pull, push or commit (actions.go)
 package projects
 
 import (
@@ -35,8 +38,11 @@ import (
 
 // Browser serves the routes above for the repos under its roots.
 type Browser struct {
-	roots []string
-	git   gitRunner
+	roots     []string
+	git       gitRunner                // reads (status, log, diff)
+	gitAction gitRunner                // the buttons (fetch, pull, push, commit): see actions.go
+	allowed   func(*http.Request) bool // is a button press from the dashboard itself?
+	locks     locks
 
 	mu       sync.Mutex
 	cached   []Project
@@ -49,6 +55,11 @@ type Project struct {
 	Name       string    `json:"name"` // the folder name
 	Root       string    `json:"root"` // which configured root it's in
 	Branch     string    `json:"branch,omitempty"`
+	Upstream   string    `json:"upstream,omitempty"` // what it pushes to and pulls from, e.g. origin/main
+	Ahead      int       `json:"ahead"`              // commits to push
+	Behind     int       `json:"behind"`             // commits to pull (as of the last fetch)
+	Gone       bool      `json:"gone,omitempty"`     // the upstream branch no longer exists
+	LastFetch  time.Time `json:"last_fetch,omitzero"`
 	Changed    int       `json:"changed"`              // files with uncommitted changes
 	LastChange time.Time `json:"last_change,omitzero"` // newest changed file, else the last commit
 	LastCommit *Commit   `json:"last_commit,omitempty"`
@@ -65,13 +76,14 @@ type Commit struct {
 const listFor = 4 * time.Second
 
 func New(roots []string) *Browser {
-	return &Browser{roots: roots, git: runGit}
+	return &Browser{roots: roots, git: runGit, gitAction: runGitAction}
 }
 
-// Register adds the routes. They're all GETs that change nothing, so they
-// don't need the dashboard's CSRF check; the parameter is for symmetry with
-// the other route groups.
-func (b *Browser) Register(mux *http.ServeMux, _ func(*http.Request) bool) {
+// Register adds the routes. The GETs change nothing; the git buttons
+// (POST, actions.go) need allowed(r): the dashboard's own CSRF check.
+func (b *Browser) Register(mux *http.ServeMux, allowed func(*http.Request) bool) {
+	b.allowed = allowed
+	mux.HandleFunc("POST /api/projects/{id}/git/{action}", b.act)
 	mux.HandleFunc("GET /api/projects", b.list)
 	mux.HandleFunc("GET /api/projects/{id}/changes", b.changes)
 	mux.HandleFunc("GET /api/projects/{id}/tree", b.tree)
@@ -140,6 +152,10 @@ func (b *Browser) describe(ctx context.Context, p *Project) {
 	st, err := b.status(ctx, p.path)
 	if err == nil {
 		p.Branch, p.Changed = st.branch, len(st.files)
+		p.Upstream, p.Ahead, p.Behind, p.Gone = st.upstream, st.ahead, st.behind, st.gone
+		if info, err := os.Stat(filepath.Join(p.path, ".git", "FETCH_HEAD")); err == nil {
+			p.LastFetch = info.ModTime() // "behind" is only as fresh as this
+		}
 		for rel := range st.files {
 			if info, err := os.Stat(filepath.Join(p.path, filepath.FromSlash(rel))); err == nil && info.ModTime().After(p.LastChange) {
 				p.LastChange = info.ModTime()
