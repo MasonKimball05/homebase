@@ -39,7 +39,7 @@ func TestFollowFile(t *testing.T) {
 	defer cancel()
 
 	// Not there yet: it waits.
-	go followFile(ctx, path, logs, 20*time.Millisecond)
+	go followFile(ctx, path, logs, 20*time.Millisecond, nil)
 	time.Sleep(60 * time.Millisecond)
 	if err := os.WriteFile(path, []byte("one\r\ntwo\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -72,7 +72,7 @@ func TestFollowFileShowsOnlyTheTailOfABigFile(t *testing.T) {
 	logs := NewLogs(filepath.Join(dir, "own.log"), 5000, 1<<20)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go followFile(ctx, path, logs, 20*time.Millisecond)
+	go followFile(ctx, path, logs, 20*time.Millisecond, nil)
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) && !strings.Contains(strings.Join(texts(logs), "\n"), "the last line") {
 		time.Sleep(20 * time.Millisecond)
@@ -89,4 +89,21 @@ func TestFollowFileShowsOnlyTheTailOfABigFile(t *testing.T) {
 			t.Fatalf("a cut-off line came through: %q", line)
 		}
 	}
+}
+
+func TestFollowFileSkipsMatchingLines(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "server.log")
+	os.WriteFile(path, []byte(
+		`[GIN] 2026/10/15 - 13:24:14 | 200 | 0s | 127.0.0.1 | GET      "/api/version"`+"\n"+
+			`time=2026-10-15T13:25:01 level=INFO msg="loaded model" model=qwen3-coder:30b`+"\n"+
+			`[GIN] 2026/10/15 - 13:25:03 | 200 | 2ms | 127.0.0.1 | GET      "/api/ps"`+"\n"+
+			`[GIN] 2026/10/15 - 13:25:09 | 200 | 41s | 100.80.3.99 | POST     "/api/chat"`+"\n"), 0o644)
+	logs := NewLogs(filepath.Join(dir, "own.log"), 100, 1<<20)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go followFile(ctx, path, logs, 20*time.Millisecond, skipPattern([]string{`GET\s+"/api/(version|ps|tags)"`}))
+	waitLines(t, logs,
+		`time=2026-10-15T13:25:01 level=INFO msg="loaded model" model=qwen3-coder:30b`,
+		`[GIN] 2026/10/15 - 13:25:09 | 200 | 41s | 100.80.3.99 | POST     "/api/chat"`)
 }

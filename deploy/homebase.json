@@ -103,6 +103,8 @@
       "url": "http://arkans-pc1:8090/ai.html",
       "health": "http://127.0.0.1:11434/api/version",
       "log_file": "${LOCALAPPDATA}\\Ollama\\server.log",
+      "log_skip": ["GET\\s+\"/api/(version|ps|tags)\""],
+      "health_interval_sec": 60,
       "external_ok": true,
       "autostart": true
     }

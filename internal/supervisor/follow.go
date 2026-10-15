@@ -11,6 +11,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -18,10 +19,11 @@ import (
 // followTail is how much of an existing file is shown at first.
 const followTail = 64 << 10
 
-// followFile copies new lines of path into logs until ctx ends. The file may
-// not exist yet, may be truncated or replaced (rotation); it copes with all
-// three by checking its size and identity every interval.
-func followFile(ctx context.Context, path string, logs *Logs, every time.Duration) {
+// followFile copies new lines of path into logs until ctx ends, leaving out
+// lines that match skip (nil keeps everything). The file may not exist yet,
+// may be truncated or replaced (rotation); it copes with all three by
+// checking its size and identity every interval.
+func followFile(ctx context.Context, path string, logs *Logs, every time.Duration, skip *regexp.Regexp) {
 	var (
 		f       *os.File
 		info    os.FileInfo
@@ -76,7 +78,9 @@ func followFile(ctx context.Context, path string, logs *Logs, every time.Duratio
 					continue
 				}
 				partial = ""
-				logs.Add("out", line)
+				if skip == nil || !skip.MatchString(line) {
+					logs.Add("out", line)
+				}
 				continue
 			}
 			partial += chunk

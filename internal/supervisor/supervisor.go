@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -121,6 +122,14 @@ func NewApp(cfg config.App, logDir string) *App {
 func (a *App) Name() string { return a.cfg.Name }
 
 // Status returns a copy, safe to use after the lock is released.
+// skipPattern joins log_skip's patterns into one (config.Load has checked them).
+func skipPattern(pats []string) *regexp.Regexp {
+	if len(pats) == 0 {
+		return nil
+	}
+	return regexp.MustCompile("(?:" + strings.Join(pats, ")|(?:") + ")")
+}
+
 // externalMessage explains an app that's running but not started by homebase.
 func (a *App) externalMessage() string {
 	if a.cfg.ExternalOK {
@@ -172,7 +181,7 @@ type exitResult struct {
 // Run supervises the app until ctx is cancelled, then stops it.
 func (a *App) Run(ctx context.Context) {
 	if a.cfg.LogFile != "" {
-		go followFile(ctx, a.cfg.LogFile, a.Logs, time.Second)
+		go followFile(ctx, a.cfg.LogFile, a.Logs, time.Second, skipPattern(a.cfg.LogSkip))
 	}
 	var (
 		proc      *exec.Cmd

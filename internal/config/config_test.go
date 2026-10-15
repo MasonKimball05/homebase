@@ -27,15 +27,18 @@ func TestDefaultsAndRelativePaths(t *testing.T) {
 
 func TestInvalidConfigs(t *testing.T) {
 	cases := map[string]string{
-		"bad name":             `{"apps":[{"name":"My App","dir":"d","command":"c"}]}`,
-		"duplicate":            `{"apps":[{"name":"a","dir":"d","command":"c"},{"name":"a","dir":"d","command":"c"}]}`,
-		"no command":           `{"apps":[{"name":"a","dir":"d"}]}`,
-		"no dir":               `{"apps":[{"name":"a","command":"c"}]}`,
-		"bad restart":          `{"apps":[{"name":"a","dir":"d","command":"c","restart":"sometimes"}]}`,
-		"bad health url":       `{"apps":[{"name":"a","dir":"d","command":"c","health":"localhost:5206"}]}`,
-		"unhealthy no health":  `{"apps":[{"name":"a","dir":"d","command":"c","restart_when_unhealthy":true}]}`,
-		"typo'd key":           `{"apps":[{"name":"a","dir":"d","command":"c","autostrat":true}]}`,
-		"source without build": `{"apps":[{"name":"a","dir":"d","command":"c","source":{"repo_dir":"r"}}]}`,
+		"bad name":              `{"apps":[{"name":"My App","dir":"d","command":"c"}]}`,
+		"duplicate":             `{"apps":[{"name":"a","dir":"d","command":"c"},{"name":"a","dir":"d","command":"c"}]}`,
+		"no command":            `{"apps":[{"name":"a","dir":"d"}]}`,
+		"no dir":                `{"apps":[{"name":"a","command":"c"}]}`,
+		"bad restart":           `{"apps":[{"name":"a","dir":"d","command":"c","restart":"sometimes"}]}`,
+		"bad health url":        `{"apps":[{"name":"a","dir":"d","command":"c","health":"localhost:5206"}]}`,
+		"unhealthy no health":   `{"apps":[{"name":"a","dir":"d","command":"c","restart_when_unhealthy":true}]}`,
+		"typo'd key":            `{"apps":[{"name":"a","dir":"d","command":"c","autostrat":true}]}`,
+		"source without build":  `{"apps":[{"name":"a","dir":"d","command":"c","source":{"repo_dir":"r"}}]}`,
+		"log_skip, no log_file": `{"apps":[{"name":"a","dir":"d","command":"c","log_skip":["x"]}]}`,
+		"bad log_skip":          `{"apps":[{"name":"a","dir":"d","command":"c","log_file":"l.log","log_skip":["(unclosed"]}]}`,
+		"empty project roots":   `{"projects":{"roots":[]},"apps":[]}`,
 	}
 	for name, input := range cases {
 		t.Run(name, func(t *testing.T) {

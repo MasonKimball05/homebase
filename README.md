@@ -86,6 +86,10 @@ optional keys make that tidy:
 - `"log_file"`: a log the program writes itself, shown in the card's Logs
   panel (`"${LOCALAPPDATA}\\Ollama\\server.log"`; `${VAR}`s are expanded).
   Homebase follows it, including after the program rotates it.
+- `"log_skip"`: patterns (Go regular expressions) for lines to leave out of
+  that log, e.g. `["GET\\s+\"/api/(version|ps|tags)\""]` for Ollama, whose log
+  would otherwise be mostly homebase's own health checks and the chat page's
+  load monitor asking what's loaded.
 - `"external_ok": true`: running outside homebase is normal for this app, so
   the card is green ("Running (own app)") rather than asking you to stop the
   other copy. If it isn't running at all, homebase starts it as usual.

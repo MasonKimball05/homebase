@@ -123,6 +123,10 @@ type App struct {
 	// Logs panel: for apps that usually run outside homebase (Ollama's tray
 	// app logs to ${LOCALAPPDATA}\Ollama\server.log). ${VAR}s are expanded.
 	LogFile string `json:"log_file,omitempty"`
+	// LogSkip leaves matching lines of LogFile out of the Logs panel: Go
+	// regular expressions, e.g. the requests homebase itself makes to check on
+	// the app, which would otherwise drown out everything else.
+	LogSkip []string `json:"log_skip,omitempty"`
 	// ExternalOK: running outside homebase is this app's normal state (Ollama
 	// runs from its tray app), so show that as healthy rather than as a
 	// duplicate to clean up. Homebase still starts it when it isn't running.
@@ -274,6 +278,14 @@ func Parse(data []byte, baseDir string) (Config, error) {
 		}
 		if a.LogFile != "" {
 			a.LogFile = resolve(baseDir, os.ExpandEnv(a.LogFile))
+		}
+		if len(a.LogSkip) > 0 && a.LogFile == "" {
+			return Config{}, fmt.Errorf("app %q: log_skip only applies to a log_file", a.Name)
+		}
+		for _, pat := range a.LogSkip {
+			if _, err := regexp.Compile(pat); err != nil {
+				return Config{}, fmt.Errorf("app %q: log_skip %q isn't a valid pattern: %v", a.Name, pat, err)
+			}
 		}
 		if a.RestartWhenUnhealthy && a.Health == "" {
 			return Config{}, fmt.Errorf("app %q: restart_when_unhealthy needs a health URL", a.Name)
