@@ -45,6 +45,8 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -app
 h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
 .host { font-size: 13px; }
 .summary { margin-left: auto; font-size: 13px; color: var(--muted); }
+.chat-link { font-size: 13px; font-weight: 600; color: var(--accent); text-decoration: none; }
+.chat-link:hover { text-decoration: underline; }
 
 main { max-width: 1200px; margin: 0 auto; padding: 24px; }
 .banner { background: color-mix(in srgb, var(--bad) 15%, var(--surface)); color: var(--bad); padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }

@@ -100,3 +100,39 @@ func TestStatusIncludesResourcesWhenAvailable(t *testing.T) {
 		t.Fatalf("expected no resources field: %s", body)
 	}
 }
+
+func TestChatIsOffWithoutAnAISection(t *testing.T) {
+	rec := do(newServer(t), "GET", "/api/ai", nil)
+	if !strings.Contains(rec.Body.String(), `"enabled":false`) {
+		t.Errorf("api/ai: %s", rec.Body)
+	}
+	if rec := do(newServer(t), "POST", "/ollama/api/chat", map[string]string{"X-Homebase": "1"}); rec.Code != http.StatusNotFound && rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("chat proxy answered %d with chat off", rec.Code)
+	}
+}
+
+type fakeAI struct{ allowed func(*http.Request) bool }
+
+func (f *fakeAI) Register(mux *http.ServeMux, allowed func(*http.Request) bool) {
+	f.allowed = allowed
+	mux.HandleFunc("GET /api/ai", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"enabled":true}`)) })
+}
+
+func TestChatUsesTheDashboardCheck(t *testing.T) {
+	cfg := config.Config{LogDir: t.TempDir()}
+	f := &fakeAI{}
+	New(supervisor.NewManager(cfg)).WithAI(f).Handler()
+	req := httptest.NewRequest("POST", "/ollama/api/chat", nil)
+	if f.allowed(req) {
+		t.Error("a request without X-Homebase must be refused")
+	}
+	req.Header.Set("X-Homebase", "1")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	if f.allowed(req) {
+		t.Error("a cross-site request must be refused")
+	}
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	if !f.allowed(req) {
+		t.Error("the dashboard's own request must be allowed")
+	}
+}

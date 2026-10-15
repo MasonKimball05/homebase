@@ -22,7 +22,20 @@ type Config struct {
 	// against the config file's folder.
 	LogDir string `json:"log_dir"`
 	Alerts Alerts `json:"alerts"`
-	Apps   []App  `json:"apps"`
+	// AI, when present, lets the dashboard (and Loom on another machine)
+	// chat with models served by Ollama on this PC. See internal/ai.
+	AI   *AI   `json:"ai,omitempty"`
+	Apps []App `json:"apps"`
+}
+
+// AI points homebase at an Ollama server. Ollama itself stays on 127.0.0.1;
+// homebase is the one door to it, behind the same Tailscale-only firewall
+// rule and CSRF checks as the rest of the dashboard.
+type AI struct {
+	// Ollama is the server's address. Default http://127.0.0.1:11434.
+	Ollama string `json:"ollama"`
+	// DefaultModel is picked first in the chat page, e.g. "qwen3-coder:30b".
+	DefaultModel string `json:"default_model"`
 }
 
 // Alerts sends phone notifications through ntfy (https://ntfy.sh).
@@ -174,6 +187,15 @@ func Parse(data []byte, baseDir string) (Config, error) {
 	if d := cfg.Alerts.DashboardURL; d != "" {
 		if u, err := url.Parse(d); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			return Config{}, fmt.Errorf("alerts.dashboard_url must be an http(s) URL")
+		}
+	}
+
+	if ai := cfg.AI; ai != nil {
+		if ai.Ollama == "" {
+			ai.Ollama = "http://127.0.0.1:11434"
+		}
+		if u, err := url.Parse(ai.Ollama); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || (u.Path != "" && u.Path != "/") {
+			return Config{}, fmt.Errorf("ai.ollama must be an http(s) address like http://127.0.0.1:11434")
 		}
 	}
 

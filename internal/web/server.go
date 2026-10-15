@@ -17,8 +17,15 @@ import (
 //go:embed static
 var staticFiles embed.FS
 
+// AIRoutes is the chat proxy (internal/ai), kept as an interface so this
+// package doesn't depend on it.
+type AIRoutes interface {
+	Register(mux *http.ServeMux, allowed func(*http.Request) bool)
+}
+
 type Server struct {
 	mgr     *supervisor.Manager
+	ai      AIRoutes
 	usage   func() (resources.Snapshot, bool) // optional: CPU and memory readings
 	host    string
 	started time.Time
@@ -35,6 +42,12 @@ func (s *Server) WithResources(latest func() (resources.Snapshot, bool)) *Server
 	return s
 }
 
+// WithAI adds the Ollama chat proxy and the chat page's API (see internal/ai).
+func (s *Server) WithAI(ai AIRoutes) *Server {
+	s.ai = ai
+	return s
+}
+
 func (s *Server) Handler() http.Handler {
 	static, _ := fs.Sub(staticFiles, "static")
 	mux := http.NewServeMux()
@@ -42,6 +55,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/status", s.status)
 	mux.HandleFunc("GET /api/apps/{name}/logs", s.logs)
 	mux.HandleFunc("POST /api/apps/{name}/{action}", s.act)
+	if s.ai != nil {
+		s.ai.Register(mux, fromDashboard)
+	} else {
+		mux.HandleFunc("GET /api/ai", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]bool{"enabled": false})
+		})
+	}
 	return securityHeaders(mux)
 }
 
@@ -82,7 +102,7 @@ func (s *Server) act(w http.ResponseWriter, r *http.Request) {
 	// the dashboard itself. Browsers can't add a custom header to a
 	// cross-site request without a CORS preflight, which this server never
 	// approves, so requiring one blocks other websites from posting here.
-	if r.Header.Get("X-Homebase") != "1" || !sameSite(r) {
+	if !fromDashboard(r) {
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": "request not from the dashboard"})
 		return
 	}
@@ -96,6 +116,10 @@ func (s *Server) act(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, app.Status())
+}
+
+func fromDashboard(r *http.Request) bool {
+	return r.Header.Get("X-Homebase") == "1" && sameSite(r)
 }
 
 func sameSite(r *http.Request) bool {

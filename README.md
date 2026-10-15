@@ -116,6 +116,38 @@ Setup:
 A missing or broken alerts config never stops homebase. It logs a warning to
 `logs\homebase.log` and runs without alerts.
 
+## Chat with the desktop's models
+
+With an `"ai"` section in `homebase.json`, homebase is also the door to the
+models [Ollama](https://ollama.com) runs on this PC's GPU (Qwen and friends),
+so you can use them from the Mac or your phone over Tailscale:
+
+```jsonc
+"ai": {
+  "ollama": "http://127.0.0.1:11434",   // the default; Ollama stays on this PC only
+  "default_model": "qwen3-coder:30b"
+}
+```
+
+- **In the browser:** the dashboard gets a "Chat with qwen3-coder →" link to
+  `chat.html`: pick a model, ask, and the answer streams in. Stop cancels
+  the request (and the generation). Conversations stay in that browser's
+  local storage.
+- **From Loom** (or any Ollama client that takes a base URL): set its server
+  to `http://arkans-pc1:8090/ollama`. Loom's Local AI view can then read
+  and, with your approval, edit files on the Mac while the model runs here.
+
+What's reachable, in `internal/ai`: `GET /ollama/api/version`,
+`GET /ollama/api/tags` and `POST /ollama/api/chat`, nothing else (no pulling,
+deleting or creating models). Ollama itself doesn't need to listen on the
+network or get its own firewall rule. A chat request needs the same
+`X-Homebase` header and same-site check as the app buttons, must name a model
+and carry messages, and is capped at 8 MB. The browser's own headers (Origin,
+cookies) aren't passed on.
+
+Without an `"ai"` section nothing changes: the link stays hidden and the
+`/ollama/` routes don't exist.
+
 ## Install on the desktop
 
 The desktop keeps a clone of this repo in `C:\Users\Admin\projects\homebase`
@@ -189,6 +221,7 @@ internal/supervisor/
   proc_unix.go               process groups + SIGTERM/SIGKILL (for dev on a Mac)
   logs.go                    ring buffer + rotating log file
 internal/alerts/             watches statuses, decides what's worth a notification, sends via ntfy
+internal/ai/                 the Ollama proxy behind the chat page (and Loom)
 internal/web/                JSON API + embedded dashboard (HTML/CSS/JS)
 scripts/install-windows.ps1  one-time desktop setup
 scripts/update.ps1           pull + rebuild + redeploy an app (or homebase) from git

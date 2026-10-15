@@ -6,6 +6,10 @@
     "dashboard_url": "http://arkans-pc1:8090/",
     "startup_summary": true
   },
+  "ai": {
+    "ollama": "http://127.0.0.1:11434",
+    "default_model": "qwen3-coder:30b"
+  },
   "apps": [
     {
       "name": "jobtracker",

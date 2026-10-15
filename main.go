@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/MasonKimball05/homebase/internal/ai"
 	"github.com/MasonKimball05/homebase/internal/alerts"
 	"github.com/MasonKimball05/homebase/internal/config"
 	"github.com/MasonKimball05/homebase/internal/resources"
@@ -195,7 +196,16 @@ func run(configPath string) error {
 	}, 3*time.Second)
 	go usage.Run(ctx)
 
-	srv := &http.Server{Handler: web.New(mgr).WithResources(usage.Latest).Handler(), ReadHeaderTimeout: 5 * time.Second}
+	dash := web.New(mgr).WithResources(usage.Latest)
+	if cfg.AI != nil {
+		// Chat with Ollama's models from the dashboard (and Loom) over Tailscale.
+		proxy, err := ai.New(cfg.AI.Ollama, cfg.AI.DefaultModel)
+		if err != nil {
+			return err
+		}
+		dash = dash.WithAI(proxy)
+	}
+	srv := &http.Server{Handler: dash.Handler(), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
