@@ -58,6 +58,9 @@ type Away struct {
 	// Push lists projects whose finished away/… branches are pushed to their
 	// origin (a private clone you review on GitHub). Others are never pushed.
 	Push []string `json:"push,omitempty"`
+	// Path: folders put in front of PATH for the local model's checks and
+	// Claude Code (e.g. Python's user Scripts folder, where pip put ruff).
+	Path []string `json:"path,omitempty"`
 }
 
 // Projects lists the folders whose git repos the Projects page shows.

@@ -37,9 +37,20 @@ func (s *Service) runTask(ctx context.Context, id string) {
 		}
 	}
 
+	// Clean up before the queue changes, so a paused task can't start again
+	// while its old branch is still there (same name).
+	interrupted := ctx.Err() != nil
+	repo, _ := s.projects.Path(task.Project)
+	if interrupted {
+		// Leave nothing behind: the next attempt makes a fresh branch.
+		dropBranch(context.Background(), repo, s.worktree(task), task.Branch)
+	} else {
+		// The branch keeps the work; the worktree isn't needed any more.
+		removeWorktree(context.Background(), repo, s.worktree(task))
+	}
+
 	s.mu.Lock()
 	_, stopped := cancelledIDs.LoadAndDelete(id)
-	interrupted := ctx.Err() != nil
 	s.cancel, s.running = nil, ""
 	t := s.find(id)
 	if t != nil {
@@ -62,19 +73,13 @@ func (s *Service) runTask(ctx context.Context, id string) {
 	s.saveLocked()
 	s.mu.Unlock()
 
-	repo, _ := s.projects.Path(task.Project)
 	if interrupted {
-		// Leave nothing behind: the next attempt makes a fresh branch.
-		dropBranch(context.Background(), repo, s.worktree(task), task.Branch)
 		if log != nil {
 			fmt.Fprintf(log, "---- stopped (%s)\n", map[bool]string{true: "cancelled", false: "paused: back at the PC, or Away switched off"}[stopped])
 		}
 		s.poke()
 		return
 	}
-	// The branch keeps the work; the worktree isn't needed any more.
-	removeWorktree(context.Background(), repo, s.worktree(task))
-
 	var final Task
 	if t != nil {
 		s.mu.Lock()

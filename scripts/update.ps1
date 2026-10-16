@@ -79,6 +79,10 @@ if ($App -eq 'homebase') {
 
     Write-Host 'Swapping in the new version (apps restart with it)'
     schtasks /End /TN homebase | Out-Null
+    # The idle reporter (Away, see README) runs this same exe: stop it too, or
+    # Windows won't let the file be replaced.
+    $idle = Get-ScheduledTask -TaskName 'homebase-idle' -ErrorAction SilentlyContinue
+    if ($idle) { Stop-ScheduledTask -TaskName 'homebase-idle' }
     Start-Sleep -Seconds 2
     $exe = Join-Path $HomebaseDir 'homebase.exe'
     Copy-Item $exe "$exe.previous" -Force          # one-step rollback
@@ -86,6 +90,7 @@ if ($App -eq 'homebase') {
     Move-Item $newExe $exe -Force
     Copy-Item $newConfig $liveConfig -Force
     schtasks /Run /TN homebase | Out-Null
+    if ($idle) { Start-ScheduledTask -TaskName 'homebase-idle' }
 
     Start-Sleep -Seconds 3
     try {

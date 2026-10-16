@@ -247,7 +247,7 @@ func run(configPath string) error {
 				claude = "claude"
 			}
 			logDir := filepath.Join(cfg.LogDir, "away")
-			steps := away.CLI{Runner: cfg.Away.Runner, ClaudePath: claude, Ollama: ollama, Model: model, LogDir: logDir}
+			steps := away.CLI{Runner: cfg.Away.Runner, ClaudePath: claude, Ollama: ollama, Model: model, LogDir: logDir, Path: cfg.Away.Path}
 			notify := func(title, body string) {
 				if notifier != nil {
 					if err := notifier.Notify(context.Background(), alerts.Message{Title: title, Body: body, Tags: "robot"}); err != nil {

@@ -374,3 +374,17 @@ func TestAFailureLeavesNoEmptyBranch(t *testing.T) {
 		t.Fatal("an empty branch was left behind")
 	}
 }
+
+func TestPathGoesFirst(t *testing.T) {
+	t.Setenv("PATH", "/usr/bin")
+	env := CLI{Path: []string{"/opt/tools"}}.env("X=1")
+	var path string
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "PATH=") {
+			path = kv
+		}
+	}
+	if path != "PATH=/opt/tools"+string(os.PathListSeparator)+"/usr/bin" || env[len(env)-1] != "X=1" {
+		t.Fatalf("%q", path)
+	}
+}

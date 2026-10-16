@@ -290,7 +290,9 @@ never committed.
   "claude": "C:\\Users\\Admin\\.local\\bin\\claude.exe",
   "idle_minutes": 20,
   "rounds": 2,
-  "push": ["Parliament-Dev"]
+  "push": ["Parliament-Dev"],
+  // folders put in front of PATH for Away's runs (where pip put ruff)
+  "path": ["C:\\Users\\Admin\\AppData\\Local\\Packages\\…\\Python311\\Scripts"]
 }
 ```
 
@@ -305,6 +307,9 @@ $a = New-ScheduledTaskAction -Execute "C:\Users\Admin\apps\homebase\homebase.exe
 Register-ScheduledTask -TaskName "homebase-idle" -Action $a -Trigger (New-ScheduledTaskTrigger -AtLogOn -User Admin) -Settings (New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -AllowStartIfOnBatteries) -Force
 Start-ScheduledTask homebase-idle
 ```
+
+`scripts/update.ps1` stops and restarts that task around the swap, since
+Windows won't replace an exe that's running.
 
 Reading the queue is open like the rest of the dashboard; queueing, Accept
 and the rest need the `X-Homebase` check. Code: `internal/away`.
