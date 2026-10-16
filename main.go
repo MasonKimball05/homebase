@@ -207,8 +207,19 @@ func run(configPath string) error {
 		dash = dash.WithAI(proxy)
 	}
 	if cfg.Projects != nil {
-		// Read-only: see what changed in this PC's projects from another machine.
-		dash = dash.WithProjects(projects.New(cfg.Projects.Roots))
+		// See what changed in this PC's projects from another machine; with
+		// remote_edit, Loom can also open and edit them (token-protected).
+		browser := projects.New(cfg.Projects.Roots)
+		if cfg.Projects.RemoteEdit {
+			tokenPath := filepath.Join(filepath.Dir(configPath), "remote-token.txt")
+			token, err := projects.LoadOrCreateToken(tokenPath)
+			if err != nil {
+				return fmt.Errorf("remote editing: %w", err)
+			}
+			browser = browser.EnableRemote(token)
+			fmt.Printf("homebase: remote editing on (token in %s)\n", tokenPath)
+		}
+		dash = dash.WithProjects(browser)
 	}
 	srv := &http.Server{Handler: dash.Handler(), ReadHeaderTimeout: 5 * time.Second}
 	go func() {

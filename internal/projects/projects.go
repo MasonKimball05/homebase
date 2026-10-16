@@ -43,6 +43,8 @@ type Browser struct {
 	gitAction gitRunner                // the buttons (fetch, pull, push, commit): see actions.go
 	allowed   func(*http.Request) bool // is a button press from the dashboard itself?
 	locks     locks
+	// Remote editing from Loom (remote.go); empty: off.
+	remoteToken string
 
 	mu       sync.Mutex
 	cached   []Project
@@ -89,6 +91,7 @@ func (b *Browser) Register(mux *http.ServeMux, allowed func(*http.Request) bool)
 	mux.HandleFunc("GET /api/projects/{id}/branches", b.branches)
 	mux.HandleFunc("GET /api/projects/{id}/tree", b.tree)
 	mux.HandleFunc("GET /api/projects/{id}/file", b.file)
+	b.registerRemote(mux)
 }
 
 // Projects lists the repos under the roots (cached briefly). The listing
@@ -104,6 +107,31 @@ func (b *Browser) Projects(ctx context.Context) []Project {
 	}
 	b.mu.Unlock()
 
+	found := b.discover()
+
+	// git status in every repo: a few at a time, they're independent.
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 6)
+	for i := range found {
+		wg.Add(1)
+		go func(p *Project) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			b.describe(ctx, p)
+		}(&found[i])
+	}
+	wg.Wait()
+	sort.SliceStable(found, func(i, j int) bool { return found[i].LastChange.After(found[j].LastChange) })
+
+	b.mu.Lock()
+	b.cached, b.cachedAt = found, time.Now()
+	b.mu.Unlock()
+	return found
+}
+
+// discover finds the repos under the roots, without asking git anything.
+func (b *Browser) discover() []Project {
 	var found []Project
 	taken := map[string]int{}
 	for _, root := range b.roots {
@@ -127,25 +155,6 @@ func (b *Browser) Projects(ctx context.Context) []Project {
 			found = append(found, Project{ID: id, Name: e.Name(), Root: root, path: dir})
 		}
 	}
-
-	// git status in every repo: a few at a time, they're independent.
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 6)
-	for i := range found {
-		wg.Add(1)
-		go func(p *Project) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-			b.describe(ctx, p)
-		}(&found[i])
-	}
-	wg.Wait()
-	sort.SliceStable(found, func(i, j int) bool { return found[i].LastChange.After(found[j].LastChange) })
-
-	b.mu.Lock()
-	b.cached, b.cachedAt = found, time.Now()
-	b.mu.Unlock()
 	return found
 }
 

@@ -229,6 +229,36 @@ and files that usually hold secrets (`.env` files, private keys, `*.env`) are
 listed but their contents are never sent. Code lives in `internal/projects`
 (the buttons are `actions.go`).
 
+### Editing them from Loom on another machine
+
+Loom on the Mac can open these projects and edit them in place (File →
+Open Folder on Another Machine…). It's off until you turn it on:
+
+```jsonc
+"projects": {
+  "roots": ["C:\\Users\\Admin\\projects"],
+  "remote_edit": true
+}
+```
+
+On the next start Homebase writes a random token to `remote-token.txt`
+next to `homebase.json` (and prints where). Copy it into Loom's settings:
+
+```jsonc
+"remote": { "token": "…", "sshHost": "Admin@arkans-pc1" }
+```
+
+Loom finds Homebase from `localAi.host` when that ends in `/ollama`;
+otherwise set `"homebase": "http://arkans-pc1:8090"` there too. Every
+`/api/remote/…` route needs that token (`Authorization: Bearer …`), and
+the ones that change files need the `X-Homebase` check as well. Paths
+stay inside their project with the same rules as above (no `..`, absolute
+paths, drive letters, symlinks out or `.git`). Saves are written to a
+temporary file and renamed, so a dropped connection never leaves half a
+file. **Deleted files are moved** to `%TEMP%\homebase-deleted\<time>\`
+(or `.homebase-deleted` beside the project if that's on another drive),
+never removed. Code: `internal/projects/remote.go`.
+
 ## Install on the desktop
 
 The desktop keeps a clone of this repo in `C:\Users\Admin\projects\homebase`
@@ -304,6 +334,10 @@ config: edit it here, push, and `make update APP=homebase`.
   fixed git buttons (fetch, fast-forward pull, push without force, commit
   without secret files), behind the same `X-Homebase` check as the app
   buttons. There's no way to run any other git command from it.
+- Remote editing (`remote_edit`, off by default) reads and writes files in
+  the project folders, `.env` files included, since it's an editor. It needs
+  the token in `remote-token.txt` as well as Tailscale, so keep that file to
+  yourself. It runs no commands (terminals go over SSH, with your own login).
 - Secrets live in `env_file`s outside the repo. Env-file parse errors never
   echo the line, since it may contain a key.
 - Apps run as a normal user, not elevated.

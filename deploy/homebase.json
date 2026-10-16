@@ -11,7 +11,8 @@
     "default_model": "qwen3-coder:30b"
   },
   "projects": {
-    "roots": ["C:\\Users\\Admin\\projects", "C:\\Users\\Admin\\Documents\\GitHub"]
+    "roots": ["C:\\Users\\Admin\\projects", "C:\\Users\\Admin\\Documents\\GitHub"],
+    "remote_edit": true
   },
   "apps": [
     {

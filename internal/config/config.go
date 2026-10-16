@@ -34,6 +34,10 @@ type Config struct {
 // Projects lists the folders whose git repos the Projects page shows.
 type Projects struct {
 	Roots []string `json:"roots"`
+	// RemoteEdit lets Loom on another machine open and edit these projects
+	// (internal/projects/remote.go), with the token in remote-token.txt
+	// next to homebase.json.
+	RemoteEdit bool `json:"remote_edit,omitempty"`
 }
 
 // AI points homebase at an Ollama server. Ollama itself stays on 127.0.0.1;
