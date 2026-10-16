@@ -360,24 +360,28 @@ func (s *Service) Act(ctx context.Context, id, action string) error {
 		if err := accept(ctx, repo, task); err != nil {
 			return err
 		}
+		s.unpush(ctx, repo, task)
 		status = StatusAccepted
 	case "discard":
 		if task.Status != StatusDone && task.Status != StatusNeedsYou && task.Status != StatusFailed {
 			return errors.New("only a finished task can be discarded")
 		}
 		dropBranch(ctx, repo, s.worktree(task), task.Branch)
+		s.unpush(ctx, repo, task)
 		status = StatusDiscarded
 	case "retry":
 		if task.Status == StatusQueued || task.Status == StatusAccepted {
 			return errors.New("nothing to retry")
 		}
 		dropBranch(ctx, repo, s.worktree(task), task.Branch)
+		s.unpush(ctx, repo, task)
 		status = StatusQueued
 	case "delete":
 		if task.Status == StatusDone || task.Status == StatusNeedsYou {
 			return errors.New("accept or discard it first")
 		}
 		dropBranch(ctx, repo, s.worktree(task), task.Branch)
+		s.unpush(ctx, repo, task)
 		s.mu.Lock()
 		for i, x := range s.st.Tasks {
 			if x.ID == id {
@@ -396,6 +400,7 @@ func (s *Service) Act(ctx context.Context, id, action string) error {
 		t.Status = status
 		if status == StatusQueued {
 			t.Branch, t.Base, t.BaseCommit, t.Verdict, t.Notes, t.Error, t.Rounds, t.Changed = "", "", "", "", "", "", []Round{}, 0
+			t.Pushed = false
 		}
 	}
 	s.saveLocked()

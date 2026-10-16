@@ -418,3 +418,33 @@ func TestTranscriptError(t *testing.T) {
 		t.Fatal("missing file counted as an error")
 	}
 }
+
+func TestPushedBranchesAreRemovedFromOrigin(t *testing.T) {
+	steps := &fakeSteps{reviews: []string{`{"verdict":"pass","notes":"ok"}`, `{"verdict":"pass","notes":"ok"}`}}
+	s, repo, _ := setup(t, steps)
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	run(t, repo, "init", "-q", "--bare", origin)
+	run(t, repo, "remote", "add", "origin", origin)
+	run(t, repo, "push", "-q", "origin", "main")
+	s.set.Push = []string{"proj"}
+	s.SetMode(ModeOn)
+
+	remote := func() string { return run(t, origin, "branch", "--list", "away/*") }
+	for _, action := range []string{"accept", "discard"} {
+		task, _ := s.Add("proj", "write out.txt")
+		got := waitFor(t, s, task.ID, func(x *Task) bool { return finished(x) && x.Pushed })
+		if !strings.Contains(remote(), got.Branch) {
+			t.Fatalf("%s: not pushed: %q", action, remote())
+		}
+		if err := s.Act(context.Background(), task.ID, action); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(remote(), got.Branch) {
+			t.Fatalf("%s left %s on origin", action, got.Branch)
+		}
+	}
+	// main was never pushed by Away (the accepted merge stays local).
+	if run(t, origin, "rev-parse", "main") == run(t, repo, "rev-parse", "main") {
+		t.Fatal("Away pushed main")
+	}
+}

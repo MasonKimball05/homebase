@@ -278,6 +278,8 @@ this PC works through them while you're out:
 
 Nothing is pushed, except the `away/…` branches of projects listed in `push`
 (for a private copy you review on GitHub). `main` and `--force` never.
+Accept, Discard, Try again and Remove delete that GitHub copy of the branch
+too, so only the ones still waiting for you are there.
 Dependency folders (`node_modules`, `.venv`) are shared into the worktree,
 and `.env` files and uncommitted `AGENTS.md` / `QWEN.md` / `CLAUDE.md` /
 `CLAUDE.local.md` are copied in: the model and Claude read them, and they're

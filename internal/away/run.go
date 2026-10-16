@@ -455,6 +455,17 @@ func pushBranch(ctx context.Context, repo, branch string) error {
 	return err
 }
 
+// unpush deletes the GitHub (origin) copy of a pushed away/… branch once
+// you've accepted, discarded or retried it. A branch already gone there is fine.
+func (s *Service) unpush(ctx context.Context, repo string, t Task) {
+	if !t.Pushed || repo == "" || !strings.HasPrefix(t.Branch, "away/") {
+		return
+	}
+	if _, err := git(ctx, repo, "push", "--no-verify", "origin", "--delete", t.Branch); err != nil && !strings.Contains(err.Error(), "remote ref does not exist") {
+		s.logf("away: deleting %s from origin: %v", t.Branch, err)
+	}
+}
+
 func dropBranch(ctx context.Context, repo, wt, branch string) {
 	removeWorktree(ctx, repo, wt)
 	if repo != "" && strings.HasPrefix(branch, "away/") {
