@@ -259,6 +259,56 @@ file. **Deleted files are moved** to `%TEMP%\homebase-deleted\<time>\`
 (or `.homebase-deleted` beside the project if that's on another drive),
 never removed. Code: `internal/projects/remote.go`.
 
+## Away: coding tasks while you're not at the desktop
+
+Queue coding tasks from the dashboard (**Away →**) or Loom's Away panel, and
+this PC works through them while you're out:
+
+1. a git worktree of the project on a new branch, `away/<id>`, from the commit
+   the project is on, so your own checkout is never touched;
+2. the local model does the task there, using Loom's own agent loop (Loom's
+   `tools/qwen`, run with `npx vitest` from the Loom checkout in `runner`);
+3. **Claude Code** (the CLI, logged in on this PC) reviews the branch,
+   read-only, and passes it, sends it back with notes (up to `rounds` times),
+   or says it can't or shouldn't be done;
+4. if it still hasn't passed, Claude finishes it itself;
+5. a phone notification. The branch waits: **Accept** merges it into the
+   branch it started from (only if that checkout is clean and still on that
+   branch), **Discard** deletes it.
+
+Nothing is pushed, except the `away/…` branches of projects listed in `push`
+(for a private copy you review on GitHub). `main` and `--force` never.
+Dependency folders (`node_modules`, `.venv`) are shared into the worktree,
+and `.env` files and uncommitted `AGENTS.md` / `QWEN.md` / `CLAUDE.md` /
+`CLAUDE.local.md` are copied in: the model and Claude read them, and they're
+never committed.
+
+```jsonc
+"away": {
+  "runner": "C:\\Users\\Admin\\Documents\\GitHub\\Loom",
+  "worktrees": "C:\\Users\\Admin\\away",
+  "claude": "C:\\Users\\Admin\\.local\\bin\\claude.exe",
+  "idle_minutes": 20,
+  "rounds": 2,
+  "push": ["Parliament-Dev"]
+}
+```
+
+It runs while the mode is **On**, or in **When idle** mode once nobody has
+touched this PC for `idle_minutes`, and it stops the moment someone does
+(the task goes back to the front of the queue). Homebase runs as a background
+task and can't see the keyboard and mouse, so "when idle" needs a small
+reporter running at logon, in your session:
+
+```powershell
+$a = New-ScheduledTaskAction -Execute "C:\Users\Admin\apps\homebase\homebase.exe" -Argument '-idle-report -config "C:\Users\Admin\apps\homebase\homebase.json"'
+Register-ScheduledTask -TaskName "homebase-idle" -Action $a -Trigger (New-ScheduledTaskTrigger -AtLogOn -User Admin) -Settings (New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -AllowStartIfOnBatteries) -Force
+Start-ScheduledTask homebase-idle
+```
+
+Reading the queue is open like the rest of the dashboard; queueing, Accept
+and the rest need the `X-Homebase` check. Code: `internal/away`.
+
 ## Install on the desktop
 
 The desktop keeps a clone of this repo in `C:\Users\Admin\projects\homebase`

@@ -27,6 +27,7 @@ type Server struct {
 	mgr      *supervisor.Manager
 	ai       AIRoutes
 	projects AIRoutes                          // the read-only Projects page's API (internal/projects)
+	away     AIRoutes                          // the Away queue (internal/away)
 	usage    func() (resources.Snapshot, bool) // optional: CPU and memory readings
 	host     string
 	started  time.Time
@@ -49,6 +50,12 @@ func (s *Server) WithProjects(p AIRoutes) *Server {
 	return s
 }
 
+// WithAway adds the Away queue's API (see internal/away).
+func (s *Server) WithAway(a AIRoutes) *Server {
+	s.away = a
+	return s
+}
+
 // WithAI adds the Ollama chat proxy and the chat page's API (see internal/ai).
 func (s *Server) WithAI(ai AIRoutes) *Server {
 	s.ai = ai
@@ -66,6 +73,13 @@ func (s *Server) Handler() http.Handler {
 		s.projects.Register(mux, fromDashboard)
 	} else {
 		mux.HandleFunc("GET /api/projects", func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, map[string]bool{"enabled": false})
+		})
+	}
+	if s.away != nil {
+		s.away.Register(mux, fromDashboard)
+	} else {
+		mux.HandleFunc("GET /api/away", func(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]bool{"enabled": false})
 		})
 	}

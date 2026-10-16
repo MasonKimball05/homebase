@@ -1,0 +1,58 @@
+/* The Away page: the task queue (internal/away). */
+
+.back { color: var(--text); text-decoration: none; font-weight: 700; font-size: 18px; }
+.back:hover { color: var(--accent); }
+.small { font-size: 12px; }
+[hidden] { display: none !important; }
+
+.away-page main { max-width: 860px; }
+
+.mode { margin-bottom: 18px; }
+.mode-buttons { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.mode-buttons button { border: 0; border-radius: 0; padding: 8px 16px; background: var(--surface); }
+.mode-buttons button + button { border-left: 1px solid var(--border); }
+.mode-buttons button[aria-checked="true"] { background: var(--accent); color: #fff; }
+.mode p { margin: 8px 0 0; }
+
+.add { display: grid; gap: 6px; padding: 14px; margin-bottom: 22px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.add label { font-weight: 600; font-size: 13px; }
+.add-row { display: flex; align-items: center; gap: 10px; }
+.add select, .add textarea { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+.add textarea { resize: vertical; min-height: 80px; }
+.add-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 4px; }
+
+.tasks { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.task { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
+.task-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.task-project { font-weight: 700; }
+.task-when { margin-left: auto; }
+.task-text { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.task-notes { margin: 6px 0; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+.task-error { color: var(--bad); }
+.task-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.branch-name { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+.status { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+.status[data-s="running"] { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+.status[data-s="done"], .status[data-s="accepted"] { color: var(--ok); background: color-mix(in srgb, var(--ok) 15%, transparent); }
+.status[data-s="needs-you"] { color: var(--warn); background: color-mix(in srgb, var(--warn) 15%, transparent); }
+.status[data-s="failed"] { color: var(--bad); background: color-mix(in srgb, var(--bad) 15%, transparent); }
+
+.rounds { margin: 6px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--muted); }
+.rounds li { padding: 2px 0; }
+
+.task details { margin-top: 8px; }
+.task summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.diff, .log { margin: 8px 0 0; max-height: 60vh; overflow: auto; border: 1px solid var(--border); border-radius: 8px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.diff div { padding: 0 10px; white-space: pre; min-width: max-content; }
+.diff .d-add { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.diff .d-del { background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.diff .d-hunk { color: var(--muted); background: var(--surface-2); }
+.diff .d-file { font-weight: 700; background: var(--surface-2); }
+.log { padding: 8px 10px; white-space: pre-wrap; }
+
+@media (max-width: 600px) {
+  .mode-buttons { display: flex; }
+  .mode-buttons button { flex: 1; }
+  .task-when { margin-left: 0; width: 100%; }
+}

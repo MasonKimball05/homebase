@@ -1,0 +1,232 @@
+// The Away page: queue coding tasks for this PC to do while you're away,
+// and accept or discard what comes back. API: internal/away/api.go.
+"use strict";
+
+const el = (id) => document.getElementById(id);
+const POLL_MS = 5000;
+
+function make(tag, text, cls) {
+  const e = document.createElement(tag);
+  if (text !== undefined) e.textContent = text;
+  if (cls) e.className = cls;
+  return e;
+}
+
+async function api(path, body) {
+  const opts = body === undefined ? {} : { method: "POST", headers: { "X-Homebase": "1", "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  const r = await fetch(path, opts);
+  const ct = r.headers.get("Content-Type") || "";
+  const data = ct.includes("json") ? await r.json() : await r.text();
+  if (!r.ok) throw new Error((data && data.error) || `HTTP ${r.status}`);
+  return data;
+}
+
+function showError(msg) {
+  el("error").textContent = msg;
+  el("error").hidden = !msg;
+}
+
+function duration(s) {
+  if (s < 60) return `${Math.round(s)} s`;
+  if (s < 3600) return `${Math.round(s / 60)} min`;
+  return `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`;
+}
+const ago = (iso) => `${duration((Date.now() - Date.parse(iso)) / 1000)} ago`;
+
+const STATUS = {
+  queued: "queued", running: "working", done: "ready to review", "needs-you": "needs you",
+  failed: "failed", accepted: "merged", discarded: "discarded", cancelled: "cancelled",
+};
+const WHO = { qwen: "Local model", review: "Claude reviewed", "claude-fix": "Claude fixed it" };
+
+// ---------------- mode ----------------
+
+function renderMode(v) {
+  for (const b of document.querySelectorAll("[data-mode]")) b.setAttribute("aria-checked", String(b.dataset.mode === v.mode));
+  const idle = v.idleSeconds === null ? null : duration(v.idleSeconds);
+  el("mode-note").textContent =
+    v.mode === "off" ? "Paused. Tasks wait in the queue."
+    : v.mode === "on" ? "Working through the queue now, even if someone is at the PC."
+    : idle === null ? `Waiting for the PC to be idle ${v.idleMinutes} min, but the idle reporter isn't running there (homebase -idle-report), so it won't start.`
+    : `Starts after ${v.idleMinutes} min without keyboard or mouse input, and stops when someone's back. Idle for ${idle}.`;
+}
+
+for (const b of document.querySelectorAll("[data-mode]")) {
+  b.addEventListener("click", async () => {
+    try {
+      render(await api("api/away/mode", { mode: b.dataset.mode }));
+    } catch (e) {
+      showError(e.message);
+    }
+  });
+}
+
+// ---------------- tasks ----------------
+
+const open = new Map(); // id → which panel is open ("diff" | "log"), kept across refreshes
+
+function renderDiff(text) {
+  const box = make("div", undefined, "diff");
+  if (!text.trim()) {
+    box.append(make("div", "(no changes)"));
+    return box;
+  }
+  for (const line of text.split("\n")) {
+    const cls = line.startsWith("diff --git") ? "d-file" : line.startsWith("@@") ? "d-hunk" : line.startsWith("+") && !line.startsWith("+++") ? "d-add" : line.startsWith("-") && !line.startsWith("---") ? "d-del" : "";
+    box.append(make("div", line || " ", cls));
+  }
+  return box;
+}
+
+function panel(t, kind, label) {
+  const d = make("details");
+  d.append(make("summary", label));
+  d.open = open.get(t.id) === kind;
+  const load = async () => {
+    d.querySelector(".diff, .log")?.remove();
+    try {
+      const text = await api(`api/away/tasks/${encodeURIComponent(t.id)}/${kind}`);
+      d.append(kind === "diff" ? renderDiff(text) : make("pre", text || "(empty)", "log"));
+    } catch (e) {
+      d.append(make("pre", e.message, "log"));
+    }
+  };
+  d.addEventListener("toggle", () => {
+    if (d.open) {
+      open.set(t.id, kind);
+      load();
+    } else if (open.get(t.id) === kind) open.delete(t.id);
+  });
+  if (d.open) load();
+  return d;
+}
+
+function action(t, name, label, confirmText) {
+  const b = make("button", label);
+  if (name === "accept") b.className = "primary";
+  b.type = "button";
+  b.addEventListener("click", async () => {
+    if (confirmText && !confirm(confirmText)) return;
+    b.disabled = true;
+    try {
+      render(await api(`api/away/tasks/${encodeURIComponent(t.id)}/${name}`, {}));
+      showError("");
+    } catch (e) {
+      showError(e.message);
+      b.disabled = false;
+    }
+  });
+  return b;
+}
+
+function renderTask(t) {
+  const li = make("li", undefined, "task");
+  const head = make("div", undefined, "task-head");
+  head.append(make("span", t.project, "task-project"));
+  const st = make("span", t.status === "running" && t.stage ? t.stage : STATUS[t.status] || t.status, "status");
+  st.dataset.s = t.status;
+  head.append(st);
+  if (t.verdict === "fixed") head.append(make("span", "Claude finished it", "muted small"));
+  if (t.branch) head.append(make("span", t.branch + (t.pushed ? " (pushed)" : ""), "branch-name muted"));
+  head.append(make("span", t.finished ? `finished ${ago(t.finished)}` : t.started && t.status === "running" ? `started ${ago(t.started)}` : `added ${ago(t.created)}`, "task-when muted small"));
+  li.append(head);
+  li.append(make("p", t.text, "task-text"));
+  if (t.notes) li.append(make("div", t.notes, "task-notes"));
+  if (t.error) li.append(make("p", t.error, "task-error small"));
+  if (t.rounds && t.rounds.length) {
+    const ul = make("ul", undefined, "rounds");
+    for (const r of t.rounds) {
+      const verdict = r.verdict ? `: ${r.verdict}` : "";
+      ul.append(make("li", `${WHO[r.who] || r.who}${verdict} (${duration(r.seconds)})${r.commit ? ` · ${r.commit}` : ""}`));
+    }
+    li.append(ul);
+  }
+  if (t.branch && t.status !== "accepted" && t.status !== "discarded") li.append(panel(t, "diff", `Changes${t.changed ? ` (${t.changed} file${t.changed === 1 ? "" : "s"})` : ""}`));
+  if (t.status !== "queued") li.append(panel(t, "log", "Log"));
+
+  const acts = make("div", undefined, "task-actions");
+  switch (t.status) {
+    case "done":
+    case "needs-you":
+      acts.append(
+        action(t, "accept", "Accept", `Merge ${t.branch} into ${t.base}?`),
+        action(t, "discard", "Discard", "Delete this branch and its changes?"),
+        action(t, "retry", "Try again", "Throw this attempt away and queue the task again?"),
+      );
+      break;
+    case "queued":
+    case "running":
+      acts.append(action(t, "cancel", "Cancel", t.status === "running" ? "Stop it now?" : undefined));
+      break;
+    case "failed":
+    case "cancelled":
+      acts.append(action(t, "retry", "Try again"), action(t, "delete", "Remove"));
+      break;
+    default:
+      acts.append(action(t, "delete", "Remove"));
+  }
+  li.append(acts);
+  return li;
+}
+
+function render(v) {
+  renderMode(v);
+  const ul = el("tasks");
+  ul.replaceChildren(...v.tasks.map(renderTask));
+  el("empty").hidden = v.tasks.length > 0;
+}
+
+async function refresh() {
+  try {
+    const v = await api("api/away");
+    if (v.enabled === false) {
+      showError('Away isn\'t set up: add an "away" section to homebase.json (see the README).');
+      return;
+    }
+    // Don't rebuild while you're typing in a details panel or selecting text.
+    if (window.getSelection && String(window.getSelection()).length) return;
+    render(v);
+    showError("");
+  } catch (e) {
+    showError(`Couldn't load the queue: ${e.message}`);
+  }
+}
+
+// ---------------- adding ----------------
+
+async function loadProjects() {
+  try {
+    const list = await api("api/projects");
+    const sel = el("project");
+    const last = localStorage.getItem("away.project");
+    sel.replaceChildren(...(list.projects || list || []).map((p) => {
+      const o = make("option", p.name);
+      o.value = p.id;
+      return o;
+    }));
+    if (last && [...sel.options].some((o) => o.value === last)) sel.value = last;
+  } catch (e) {
+    showError(`Couldn't list the projects: ${e.message}`);
+  }
+}
+
+el("add").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await api("api/away/tasks", { project: el("project").value, task: el("task").value });
+    try {
+      localStorage.setItem("away.project", el("project").value);
+    } catch {
+      /* not critical */
+    }
+    el("task").value = "";
+    showError("");
+    refresh();
+  } catch (err) {
+    showError(err.message);
+  }
+});
+
+loadProjects();
+refresh();
+setInterval(refresh, POLL_MS);

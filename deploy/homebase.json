@@ -14,6 +14,14 @@
     "roots": ["C:\\Users\\Admin\\projects", "C:\\Users\\Admin\\Documents\\GitHub"],
     "remote_edit": true
   },
+  "away": {
+    "runner": "C:\\Users\\Admin\\Documents\\GitHub\\Loom",
+    "worktrees": "C:\\Users\\Admin\\away",
+    "claude": "C:\\Users\\Admin\\.local\\bin\\claude.exe",
+    "idle_minutes": 20,
+    "rounds": 2,
+    "push": ["Parliament-Dev"]
+  },
   "apps": [
     {
       "name": "jobtracker",

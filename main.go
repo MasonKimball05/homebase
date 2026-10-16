@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/MasonKimball05/homebase/internal/ai"
 	"github.com/MasonKimball05/homebase/internal/alerts"
+	"github.com/MasonKimball05/homebase/internal/away"
 	"github.com/MasonKimball05/homebase/internal/config"
 	"github.com/MasonKimball05/homebase/internal/projects"
 	"github.com/MasonKimball05/homebase/internal/resources"
@@ -31,7 +33,13 @@ func main() {
 	configPath := flag.String("config", "homebase.json", "path to config file")
 	check := flag.Bool("check", false, "validate the config and exit without starting anything")
 	testAlert := flag.Bool("test-alert", false, "send a test notification and exit")
+	idleReport := flag.Bool("idle-report", false, "keep away-idle.json (next to the config) up to date with how long this session has been idle; run at logon (see README, Away)")
 	flag.Parse()
+
+	if *idleReport {
+		reportIdle(*configPath)
+		return
+	}
 
 	if *testAlert {
 		if err := sendTestAlert(*configPath); err != nil {
@@ -220,6 +228,42 @@ func run(configPath string) error {
 			fmt.Printf("homebase: remote editing on (token in %s)\n", tokenPath)
 		}
 		dash = dash.WithProjects(browser)
+		if cfg.Away != nil {
+			// Coding tasks while you're away: the local model, then Claude Code (internal/away).
+			dir := filepath.Dir(configPath)
+			ollama := cfg.Away.Ollama
+			if ollama == "" && cfg.AI != nil {
+				ollama = cfg.AI.Ollama
+			}
+			if ollama == "" {
+				ollama = "http://127.0.0.1:11434"
+			}
+			model := cfg.Away.Model
+			if model == "" {
+				model = "qwen3-coder:30b"
+			}
+			claude := cfg.Away.Claude
+			if claude == "" {
+				claude = "claude"
+			}
+			logDir := filepath.Join(cfg.LogDir, "away")
+			steps := away.CLI{Runner: cfg.Away.Runner, ClaudePath: claude, Ollama: ollama, Model: model, LogDir: logDir}
+			notify := func(title, body string) {
+				if notifier != nil {
+					if err := notifier.Notify(context.Background(), alerts.Message{Title: title, Body: body, Tags: "robot"}); err != nil {
+						logf("away: notification: %v", err)
+					}
+				}
+			}
+			svc := away.New(away.Settings{
+				Runner: cfg.Away.Runner, Worktrees: cfg.Away.Worktrees, Claude: claude, Ollama: ollama, Model: model,
+				IdleMinutes: cfg.Away.IdleMinutes, Rounds: cfg.Away.Rounds, Push: cfg.Away.Push,
+				StatePath: filepath.Join(dir, "away.json"), IdlePath: filepath.Join(dir, "away-idle.json"), LogDir: logDir,
+			}, browser, steps, notify, logf)
+			go svc.Run(ctx)
+			dash = dash.WithAway(svc)
+			logf("away: queue ready (runner %s)", cfg.Away.Runner)
+		}
 	}
 	srv := &http.Server{Handler: dash.Handler(), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
@@ -238,4 +282,23 @@ func run(configPath string) error {
 	// Don't exit until every app has been stopped.
 	<-appsDone
 	return nil
+}
+
+// reportIdle runs in your logon session (Windows only): homebase itself runs
+// as a background task and can't see the keyboard and mouse, so this writes
+// how long they've been untouched for internal/away's "when idle" mode.
+func reportIdle(configPath string) {
+	path := filepath.Join(filepath.Dir(configPath), "away-idle.json")
+	for {
+		if idle, ok := away.IdleSeconds(); ok {
+			now := time.Now().Unix()
+			b, _ := json.Marshal(away.IdleReport{LastInput: now - idle, Written: now})
+			_ = os.WriteFile(path+".tmp", b, 0o644)
+			_ = os.Rename(path+".tmp", path)
+		} else {
+			fmt.Fprintln(os.Stderr, "homebase: can't read the idle time here (Windows only)")
+			return
+		}
+		time.Sleep(20 * time.Second)
+	}
 }

@@ -298,6 +298,14 @@ fetch("api/projects")
   })
   .catch(() => {});
 
+// The Away page link, when homebase.json has an "away" section (see internal/away).
+fetch("api/away")
+  .then((r) => r.json())
+  .then((info) => {
+    if (info.enabled !== false) el("away-link").hidden = false;
+  })
+  .catch(() => {});
+
 // The chat page link, when homebase.json has an "ai" section (see internal/ai).
 fetch("api/ai")
   .then((r) => r.json())

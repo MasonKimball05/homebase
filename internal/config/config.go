@@ -28,7 +28,36 @@ type Config struct {
 	// Projects, when present, adds a read-only Projects page: the git repos
 	// in these folders, what changed in them, and their files. See internal/projects.
 	Projects *Projects `json:"projects,omitempty"`
-	Apps     []App     `json:"apps"`
+	// Away, when present, works through a queue of coding tasks while you're
+	// away from this PC: the local model on a branch, Claude Code reviewing
+	// (and fixing) it. Needs Projects. See internal/away.
+	Away *Away `json:"away,omitempty"`
+	Apps []App `json:"apps"`
+}
+
+// Away configures the task queue (internal/away). Paths are on this PC.
+type Away struct {
+	// Runner is a Loom checkout: its tools/qwen runs the local model with
+	// Loom's own agent loop (npx vitest; needs node_modules there).
+	Runner string `json:"runner"`
+	// Worktrees is where each task gets its own git worktree while it runs.
+	Worktrees string `json:"worktrees"`
+	// Claude is the Claude Code CLI (logged in on this PC). Default "claude".
+	Claude string `json:"claude"`
+	// Ollama and Model for the local model. Defaults: ai.ollama and
+	// "qwen3-coder:30b".
+	Ollama string `json:"ollama"`
+	Model  string `json:"model"`
+	// IdleMinutes: in "when idle" mode, start after this long without
+	// keyboard or mouse input (needs `homebase -idle-report` running in your
+	// session). Default 20.
+	IdleMinutes int `json:"idle_minutes"`
+	// Rounds the local model gets (Claude sending it back with notes)
+	// before Claude fixes the branch itself. Default 2.
+	Rounds int `json:"rounds"`
+	// Push lists projects whose finished away/… branches are pushed to their
+	// origin (a private clone you review on GitHub). Others are never pushed.
+	Push []string `json:"push,omitempty"`
 }
 
 // Projects lists the folders whose git repos the Projects page shows.

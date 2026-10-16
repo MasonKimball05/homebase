@@ -130,6 +130,16 @@ func (b *Browser) Projects(ctx context.Context) []Project {
 	return found
 }
 
+// Path is where a listed project lives (for internal/away), without asking git anything.
+func (b *Browser) Path(id string) (string, bool) {
+	for _, p := range b.discover() {
+		if p.ID == id {
+			return p.path, true
+		}
+	}
+	return "", false
+}
+
 // discover finds the repos under the roots, without asking git anything.
 func (b *Browser) discover() []Project {
 	var found []Project

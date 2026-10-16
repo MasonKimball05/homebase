@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Away · homebase</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="app.css">
+  <link rel="stylesheet" href="away.css">
+  <script src="away.js" defer></script>
+</head>
+<body class="away-page">
+  <header class="bar">
+    <div class="brand">
+      <a href="./" class="back" title="Back to the dashboard">homebase</a>
+      <span class="muted">/</span>
+      <h1>Away</h1>
+    </div>
+  </header>
+
+  <main>
+    <div id="error" class="banner" hidden></div>
+
+    <section class="mode" aria-label="When to work">
+      <div class="mode-buttons" role="radiogroup" aria-label="Away mode">
+        <button type="button" role="radio" data-mode="off">Off</button>
+        <button type="button" role="radio" data-mode="idle">When idle</button>
+        <button type="button" role="radio" data-mode="on">On</button>
+      </div>
+      <p class="muted small" id="mode-note"></p>
+    </section>
+
+    <form id="add" class="add">
+      <div class="add-row">
+        <label for="project">Project</label>
+        <select id="project" required></select>
+      </div>
+      <label for="task">Task</label>
+      <textarea id="task" rows="4" maxlength="8000" required placeholder="What to do, as you'd tell a teammate, e.g. Add a test for the vote tally when a member abstains"></textarea>
+      <div class="add-actions">
+        <button type="submit" class="primary">Add to queue</button>
+        <span class="muted small">The local model does it on a new branch, then Claude reviews it and fixes what's left. Nothing is merged until you accept it.</span>
+      </div>
+    </form>
+
+    <ul class="tasks" id="tasks"></ul>
+    <p class="muted" id="empty" hidden>Nothing queued. Add a task above.</p>
+  </main>
+</body>
+</html>
