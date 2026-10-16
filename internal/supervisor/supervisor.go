@@ -87,9 +87,14 @@ type timing struct {
 	backoffMax  time.Duration
 	stableAfter time.Duration // an app that ran this long resets the backoff
 	health      time.Duration // overrides the config's health interval if set
+	// externalGrace: how long an external copy may be gone before we start
+	// our own. Its own app may be updating or restarting it, and our copy
+	// would hold the exe the installer has to replace (that broke an Ollama
+	// update: the installer rolled back and deleted its runtime).
+	externalGrace time.Duration
 }
 
-var defaultTiming = timing{backoffBase: time.Second, backoffMax: time.Minute, stableAfter: time.Minute}
+var defaultTiming = timing{backoffBase: time.Second, backoffMax: time.Minute, stableAfter: time.Minute, externalGrace: 3 * time.Minute}
 
 type App struct {
 	cfg    config.App
@@ -296,6 +301,8 @@ func (a *App) Run(ctx context.Context) {
 		start()
 	}
 
+	var graceC <-chan time.Time // set while an external copy is gone
+
 	for {
 		// A nil channel blocks forever, so these cases only fire when relevant.
 		var exitedC <-chan exitResult
@@ -341,10 +348,17 @@ func (a *App) Run(ctx context.Context) {
 					stop()
 				}
 			case actExternalGone:
-				if want && proc == nil {
-					a.Logs.Sysf("the external copy stopped answering; starting our own")
-					start()
+				if want && proc == nil && graceC == nil {
+					a.Logs.Sysf("the external copy stopped answering; starting our own in %s unless it's back by then (it may be updating)", a.timing.externalGrace)
+					graceC = time.After(a.timing.externalGrace)
 				}
+			}
+
+		case <-graceC:
+			graceC = nil
+			if want && proc == nil && a.Status().State != External {
+				a.Logs.Sysf("the external copy is still gone; starting our own")
+				start()
 			}
 
 		case r := <-exitedC:

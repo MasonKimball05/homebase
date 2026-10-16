@@ -154,6 +154,10 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File) (string, erro
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
+		var me *ModelError
+		if errors.As(qerr, &me) {
+			return "", fmt.Errorf("the local model couldn't run: %s", me.Msg)
+		}
 		sha, n, cerr := commitAll(ctx, wt, fmt.Sprintf("Away: %s (local model, round %d)", firstLine(t.Text, 60), round), local)
 		if cerr != nil {
 			return "", cerr
@@ -240,7 +244,7 @@ func reviewPrompt(t Task) string {
 %s
 </task>
 
-See the change with `+"`git diff %s...HEAD`"+` and read whatever files you need. Do not edit anything.
+See the change with `+"`git diff %s...HEAD`"+` and read whatever files you need. You may run the project's tests (for a Django project: `+"`python manage.py test <module>`"+`). Do not edit anything.
 
 Judge it like a careful reviewer: does it do the whole task, correctly; does it stay in scope (no unrelated changes, no "improvements" nobody asked for); could it break something (look at callers, tests, migrations)?
 
@@ -263,7 +267,7 @@ The last review's notes:
 %s
 </notes>
 
-See what's there with `+"`git diff %s...HEAD`"+`. Finish the task yourself: edit the files so it is done correctly and completely, staying within the task. Don't commit, push or switch branches (that's handled for you).
+See what's there with `+"`git diff %s...HEAD`"+`. Finish the task yourself: edit the files so it is done correctly and completely, staying within the task, and run the relevant tests (for a Django project: `+"`python manage.py test <module>`"+`) until they pass. Don't commit, push or switch branches (that's handled for you).
 
 End your reply with exactly one line of JSON and nothing after it:
 {"verdict": "fixed" | "fail", "notes": "..."}

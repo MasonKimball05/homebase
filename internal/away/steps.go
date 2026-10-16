@@ -65,7 +65,39 @@ func (c CLI) Qwen(ctx context.Context, dir, task string, log *os.File) error {
 		}
 		return fmt.Errorf("the runner exited: %v", err)
 	}
+	// The runner exits cleanly even when the model never answered (Ollama
+	// down or broken): its transcript then ends in an error item.
+	if msg := transcriptError(transcript); msg != "" {
+		return &ModelError{msg}
+	}
 	return nil
+}
+
+// ModelError: the local model couldn't be used at all (the task stops there,
+// rather than sending an empty attempt to review).
+type ModelError struct{ Msg string }
+
+func (e *ModelError) Error() string { return e.Msg }
+
+// transcriptError is the text of the transcript's last item when that's an error.
+func transcriptError(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var t struct {
+		Items []struct {
+			Kind string `json:"kind"`
+			Text string `json:"text"`
+		} `json:"items"`
+	}
+	if json.Unmarshal(b, &t) != nil || len(t.Items) == 0 {
+		return ""
+	}
+	if last := t.Items[len(t.Items)-1]; last.Kind == "error" {
+		return firstLine(last.Text, 400)
+	}
+	return ""
 }
 
 // Claude: `claude -p` in the worktree, the prompt on stdin. Reviewing it
@@ -74,7 +106,8 @@ func (c CLI) Qwen(ctx context.Context, dir, task string, log *os.File) error {
 func (c CLI) Claude(ctx context.Context, dir, prompt string, edit bool, log *os.File) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, claudeTimeout)
 	defer cancel()
-	tools := "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*)"
+	// Reading, git's read commands, and the usual test commands; nothing else runs.
+	tools := "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*)," + testTools
 	mode := "default"
 	if edit {
 		tools += ",Edit,MultiEdit,Write"
@@ -113,6 +146,8 @@ func (c CLI) Claude(ctx context.Context, dir, prompt string, edit bool, log *os.
 	}
 	return res.Result, nil
 }
+
+const testTools = "Bash(python manage.py test:*),Bash(python -m pytest:*),Bash(npm test:*),Bash(npx vitest run:*),Bash(go test:*),Bash(cargo test:*)"
 
 func writer(f *os.File) io.Writer {
 	if f == nil {

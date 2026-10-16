@@ -388,3 +388,33 @@ func TestPathGoesFirst(t *testing.T) {
 		t.Fatalf("%q", path)
 	}
 }
+
+func TestAModelErrorStopsTheTask(t *testing.T) {
+	steps := &fakeSteps{qwen: func(dir, task string) error { return &ModelError{"Ollama: HTTP 500 llama-server binary not found"} }}
+	s, _, _ := setup(t, steps)
+	task, _ := s.Add("proj", "anything")
+	s.SetMode(ModeOn)
+	got := waitFor(t, s, task.ID, finished)
+	if got.Status != StatusFailed || !strings.Contains(got.Error, "llama-server binary not found") {
+		t.Fatalf("%+v", got)
+	}
+	if len(steps.prompts) != 1 {
+		t.Fatalf("kept going after the model failed: %d rounds", len(steps.prompts))
+	}
+}
+
+func TestTranscriptError(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "t.json")
+	os.WriteFile(p, []byte(`{"items":[{"kind":"user","text":"x"},{"kind":"error","text":"Ollama: HTTP 500 boom"}]}`), 0o644)
+	if got := transcriptError(p); got != "Ollama: HTTP 500 boom" {
+		t.Fatalf("%q", got)
+	}
+	os.WriteFile(p, []byte(`{"items":[{"kind":"error","text":"retrying"},{"kind":"assistant","text":"done"}]}`), 0o644)
+	if got := transcriptError(p); got != "" {
+		t.Fatalf("an earlier error counted: %q", got)
+	}
+	if transcriptError(filepath.Join(dir, "missing.json")) != "" {
+		t.Fatal("missing file counted as an error")
+	}
+}

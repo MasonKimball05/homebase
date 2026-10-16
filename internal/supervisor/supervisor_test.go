@@ -275,6 +275,55 @@ func TestExternalCopyIsDetectedNotDuplicated(t *testing.T) {
 	}
 }
 
+// An external copy that goes away briefly (its own app updating or
+// restarting it) must not get a copy of ours in the meantime: ours would hold
+// the exe its installer needs to replace.
+func TestExternalCopyGetsTimeToComeBack(t *testing.T) {
+	addr := freeAddr(t)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ext := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})}
+	go ext.Serve(ln)
+	a := helperApp(t, "serve", addr, func(c *config.App) { c.Autostart = true })
+	a.timing.externalGrace = 2 * time.Second
+	run(t, a)
+	waitFor(t, "external", stateIs(External), a)
+
+	ext.Close() // the external copy stops (an update)...
+	waitFor(t, "noticed it's gone", stateIs(Stopped), a)
+	time.Sleep(300 * time.Millisecond)
+	ln2, err := net.Listen("tcp", addr) // ...and comes back within the grace period
+	if err != nil {
+		t.Fatal(err)
+	}
+	ext2 := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})}
+	go ext2.Serve(ln2)
+	defer ext2.Close()
+	waitFor(t, "external again", stateIs(External), a)
+	time.Sleep(2500 * time.Millisecond) // past the grace period
+	if s := a.Status(); s.PID != 0 || s.State != External {
+		t.Fatalf("started our own copy anyway: %+v", s)
+	}
+}
+
+func TestExternalCopyGoneForGoodIsReplaced(t *testing.T) {
+	addr := freeAddr(t)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ext := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})}
+	go ext.Serve(ln)
+	a := helperApp(t, "serve", addr, func(c *config.App) { c.Autostart = true })
+	a.timing.externalGrace = 300 * time.Millisecond
+	run(t, a)
+	waitFor(t, "external", stateIs(External), a)
+	ext.Close()
+	waitFor(t, "our own copy after the grace period", func(s Status) bool { return s.PID != 0 }, a)
+}
+
 func TestShutdownStopsRunningApps(t *testing.T) {
 	addr := freeAddr(t)
 	a := helperApp(t, "serve", addr, nil)
