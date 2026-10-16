@@ -2,16 +2,17 @@
 // Ollama serves on this PC.
 //
 // Ollama has no login of its own, so it stays bound to 127.0.0.1 and homebase
-// passes on exactly five of its endpoints under /ollama/:
+// passes on exactly six of its endpoints under /ollama/:
 //
 //	GET  /ollama/api/version   is it there
 //	GET  /ollama/api/tags      which models are pulled
 //	GET  /ollama/api/ps        which are loaded, and how much sits in VRAM
 //	POST /ollama/api/chat      a (streamed) chat request
 //	POST /ollama/api/generate  a completion (Loom's inline suggestions as you type)
+//	POST /ollama/api/embed     vectors for text (Loom's search by meaning)
 //
 // Nothing that pulls, deletes, copies or creates models is reachable. A chat
-// or generate request must come from the dashboard or a non-browser client (the same
+// generate or embed request must come from the dashboard or a non-browser client (the same
 // X-Homebase header and Sec-Fetch-Site checks as the app buttons), carries
 // at most MaxBody bytes, and is checked for a model name and messages before
 // it's sent on. The answer is streamed back as it arrives, and closing the
@@ -96,6 +97,13 @@ func (p *Proxy) Register(mux *http.ServeMux, allowed func(*http.Request) bool) {
 		}
 		p.forward(w, r, "/api/generate", CheckGenerate)
 	})
+	mux.HandleFunc("POST /ollama/api/embed", func(w http.ResponseWriter, r *http.Request) {
+		if !allowed(r) {
+			writeError(w, http.StatusForbidden, "request not from the dashboard")
+			return
+		}
+		p.forward(w, r, "/api/embed", CheckEmbed)
+	})
 }
 
 // info tells the chat page which model to start with.
@@ -153,6 +161,24 @@ func CheckGenerate(body []byte) error {
 	}
 	if req.Prompt == nil {
 		return fmt.Errorf("the request has no prompt")
+	}
+	return nil
+}
+
+// CheckEmbed validates an embedding request: a model name and some input.
+func CheckEmbed(body []byte) error {
+	var req struct {
+		Model string          `json:"model"`
+		Input json.RawMessage `json:"input"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return fmt.Errorf("the request must be JSON: %v", err)
+	}
+	if !modelRe.MatchString(req.Model) {
+		return fmt.Errorf("not a model name: %q", req.Model)
+	}
+	if len(req.Input) == 0 || string(req.Input) == "null" {
+		return fmt.Errorf("the request has no input")
 	}
 	return nil
 }

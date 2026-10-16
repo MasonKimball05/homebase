@@ -157,9 +157,10 @@ so you can use them from the Mac or your phone over Tailscale:
 
 What's reachable, in `internal/ai`: `GET /ollama/api/version`,
 `GET /ollama/api/tags`, `GET /ollama/api/ps`, `POST /ollama/api/chat` and
-`POST /ollama/api/generate` (Loom's inline completions), nothing else (no pulling,
+`POST /ollama/api/generate` (Loom's inline completions) and `POST /ollama/api/embed`
+(Loom's search by meaning), nothing else (no pulling,
 deleting or creating models). Ollama itself doesn't need to listen on the
-network or get its own firewall rule. A chat or generate request needs the same
+network or get its own firewall rule. A chat, generate or embed request needs the same
 `X-Homebase` header and same-site check as the app buttons, must name a model
 and carry messages, and is capped at 8 MB. The browser's own headers (Origin,
 cookies) aren't passed on.

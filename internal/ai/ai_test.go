@@ -22,6 +22,8 @@ func fakeOllama(t *testing.T) (*httptest.Server, *http.Request) {
 			io.WriteString(w, `{"models":[{"name":"qwen3-coder:30b"}]}`)
 		case "/api/ps":
 			io.WriteString(w, `{"models":[{"name":"qwen3-coder:30b","size":19000000000,"size_vram":12000000000}]}`)
+		case "/api/embed":
+			io.WriteString(w, `{"embeddings":[[0.1,0.2,0.3]]}`)
 		case "/api/generate":
 			io.WriteString(w, `{"response":"return 0.0","done":true}`)
 		case "/api/chat":
@@ -78,7 +80,7 @@ func TestPassesVersionAndTags(t *testing.T) {
 func TestOnlyChatAndListingAreReachable(t *testing.T) {
 	o, _ := fakeOllama(t)
 	h := handler(t, o.URL)
-	for _, path := range []string{"/ollama/api/pull", "/ollama/api/delete", "/ollama/api/create", "/ollama/api/copy", "/ollama/api/embed"} {
+	for _, path := range []string{"/ollama/api/pull", "/ollama/api/delete", "/ollama/api/create", "/ollama/api/copy", "/ollama/api/push", "/ollama/api/show"} {
 		if rec := call(h, "POST", path, `{"model":"x"}`, map[string]string{"X-Homebase": "1"}); rec.Code != http.StatusNotFound && rec.Code != http.StatusMethodNotAllowed {
 			t.Errorf("%s answered %d", path, rec.Code)
 		}
@@ -121,6 +123,22 @@ func TestGenerateForInlineCompletions(t *testing.T) {
 		if rec := call(h, "POST", "/ollama/api/generate", tc.body, tc.headers); rec.Code != tc.want {
 			t.Errorf("%s: got %d, want %d", tc.body, rec.Code, tc.want)
 		}
+	}
+}
+
+func TestEmbedForSearchByMeaning(t *testing.T) {
+	o, got := fakeOllama(t)
+	h := handler(t, o.URL)
+	ok := map[string]string{"X-Homebase": "1"}
+	rec := call(h, "POST", "/ollama/api/embed", `{"model":"nomic-embed-text","input":["a","b"]}`, ok)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "embeddings") || got.URL.Path != "/api/embed" {
+		t.Fatalf("embed: %d %s", rec.Code, rec.Body)
+	}
+	if rec := call(h, "POST", "/ollama/api/embed", `{"model":"m"}`, ok); rec.Code != http.StatusBadRequest {
+		t.Errorf("no input: %d", rec.Code)
+	}
+	if rec := call(h, "POST", "/ollama/api/embed", `{"model":"m","input":"x"}`, nil); rec.Code != http.StatusForbidden {
+		t.Errorf("not from the dashboard: %d", rec.Code)
 	}
 }
 
