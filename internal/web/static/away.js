@@ -159,6 +159,15 @@ function renderTask(t) {
       acts.append(action(t, "cancel", "Cancel", t.status === "running" ? "Stop it now?" : undefined));
       break;
     case "failed":
+      // Work it had committed before failing (a restart, say) can still be taken.
+      if (t.branch) {
+        acts.append(
+          action(t, "accept", "Accept", `Merge ${t.branch} into ${t.base}? It wasn't reviewed.`),
+          action(t, "discard", "Discard", "Delete this branch and its changes?"),
+        );
+      }
+      acts.append(action(t, "retry", "Try again", t.branch ? "Throw this attempt away and queue the task again?" : undefined), action(t, "delete", "Remove", t.branch ? "Remove it and delete its branch?" : undefined));
+      break;
     case "cancelled":
       acts.append(action(t, "retry", "Try again"), action(t, "delete", "Remove"));
       break;
