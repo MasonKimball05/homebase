@@ -236,6 +236,62 @@ el("add").addEventListener("submit", async (e) => {
   }
 });
 
+// ---------------- track record ----------------
+
+const OUTCOME = { accepted: "accepted", discarded: "discarded", retried: "tried again", removed: "removed", "": "waiting for you" };
+
+function summarize(list, label) {
+  const box = make("div");
+  box.append(make("strong", label));
+  const reviewed = list.filter((e) => e.stats.reviewed);
+  if (!list.length) {
+    box.append(make("span", "none yet", "muted"));
+    return box;
+  }
+  const pct = (n, d) => (d ? `${Math.round((100 * n) / d)}%` : "–");
+  const avg = (f) => list.reduce((s, e) => s + f(e), 0) / list.length;
+  const accepted = list.filter((e) => e.outcome === "accepted").length;
+  box.append(
+    make("div", `${list.length} attempt${list.length === 1 ? "" : "s"}, ${accepted} accepted`),
+    make("div", `passed Claude's first review: ${pct(reviewed.filter((e) => e.stats.passedFirstReview).length, reviewed.length)}`),
+    make("div", `Claude had to fix: ${pct(list.filter((e) => e.stats.claudeFixed).length, list.length)}`),
+    make("div", `model time ${duration(avg((e) => e.stats.qwenSeconds))}, ${avg((e) => e.stats.testRuns).toFixed(1)} test runs on average`),
+  );
+  return box;
+}
+
+async function loadRecord() {
+  let list;
+  try {
+    list = await api("api/away/examples");
+  } catch {
+    return;
+  }
+  if (!Array.isArray(list) || !list.length) return;
+  el("record").hidden = false;
+  el("record-summary").replaceChildren(summarize(list.filter((e) => e.shown > 0), "With earlier examples"), summarize(list.filter((e) => !e.shown), "Without"));
+  el("record-rows").replaceChildren(
+    ...list.map((e) => {
+      const tr = make("tr");
+      const first = !e.stats.reviewed ? make("td", "not reviewed", "muted") : make("td", e.stats.passedFirstReview ? "passed" : "sent back", e.stats.passedFirstReview ? "yes" : "no");
+      const result = `${e.author === "qwen+claude" ? "Claude fixed · " : ""}${OUTCOME[e.outcome] ?? e.outcome}`;
+      tr.append(
+        make("td", new Date(e.finished).toLocaleDateString([], { month: "short", day: "numeric" })),
+        make("td", `${e.project}: ${e.task.length > 90 ? e.task.slice(0, 89) + "…" : e.task}`, "task"),
+        make("td", String(e.shown)),
+        make("td", duration(e.stats.qwenSeconds)),
+        make("td", String(e.stats.testRuns)),
+        first,
+        make("td", result, e.outcome === "accepted" ? "yes" : e.outcome === "discarded" ? "no" : ""),
+      );
+      tr.title = e.task;
+      return tr;
+    }),
+  );
+}
+
 loadProjects();
 refresh();
 setInterval(refresh, POLL_MS);
+loadRecord();
+setInterval(loadRecord, 60_000);

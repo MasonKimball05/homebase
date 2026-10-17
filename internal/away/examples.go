@@ -243,6 +243,59 @@ type ExampleSummary struct {
 	Outcome  string    `json:"outcome"`
 	Finished time.Time `json:"finished"`
 	Files    []string  `json:"files"`
+	Shown    int       `json:"shown"` // earlier examples the model was shown (recall.go)
+	Stats    Stats     `json:"stats"`
+}
+
+// Stats: how an attempt went, worked out from its rounds and transcripts,
+// so old examples get them too. For comparing (with examples shown or
+// not, one model or another) on real tasks.
+type Stats struct {
+	QwenRounds  int `json:"qwenRounds"`
+	QwenSeconds int `json:"qwenSeconds"`
+	ToolCalls   int `json:"toolCalls"` // the local model's, all rounds
+	TestRuns    int `json:"testRuns"`  // its run_tests calls
+	// PassedFirstReview: Claude passed the local model's first attempt as it was.
+	PassedFirstReview bool `json:"passedFirstReview"`
+	Reviewed          bool `json:"reviewed"` // a review happened at all
+	ClaudeFixed       bool `json:"claudeFixed"`
+}
+
+func statsOf(ex Example) Stats {
+	var st Stats
+	firstReview := true
+	for _, r := range ex.Rounds {
+		switch r.Who {
+		case "qwen":
+			st.QwenRounds++
+			st.QwenSeconds += r.Seconds
+			var tr struct {
+				Items []struct {
+					Kind string `json:"kind"`
+					Name string `json:"name"`
+				} `json:"items"`
+			}
+			if json.Unmarshal(r.Transcript, &tr) == nil {
+				for _, it := range tr.Items {
+					if it.Kind == "tool" {
+						st.ToolCalls++
+						if it.Name == "run_tests" {
+							st.TestRuns++
+						}
+					}
+				}
+			}
+		case "review":
+			st.Reviewed = true
+			if firstReview {
+				st.PassedFirstReview = r.Verdict == "pass"
+				firstReview = false
+			}
+		case "claude-fix":
+			st.ClaudeFixed = true
+		}
+	}
+	return st
 }
 
 // Examples lists the saved attempts, newest first (one project's, or all).
@@ -275,7 +328,7 @@ func (s *Service) Examples(project string) ([]ExampleSummary, error) {
 			if json.Unmarshal(b, &ex) != nil {
 				continue
 			}
-			out = append(out, ExampleSummary{Name: d.Name() + "/" + f.Name(), ID: ex.ID, Project: ex.Project, Task: ex.Task, Status: ex.Status, Verdict: ex.Verdict, Author: ex.Author, Outcome: ex.Outcome, Finished: ex.Finished, Files: ex.Files})
+			out = append(out, ExampleSummary{Name: d.Name() + "/" + f.Name(), ID: ex.ID, Project: ex.Project, Task: ex.Task, Status: ex.Status, Verdict: ex.Verdict, Author: ex.Author, Outcome: ex.Outcome, Finished: ex.Finished, Files: ex.Files, Shown: len(ex.Shown), Stats: statsOf(ex)})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Finished.After(out[j].Finished) })

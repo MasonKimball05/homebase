@@ -709,3 +709,35 @@ func TestCosine(t *testing.T) {
 		t.Fatal("degenerate vectors")
 	}
 }
+
+func TestStatsSayHowAnAttemptWent(t *testing.T) {
+	steps := &fakeSteps{
+		reviews: []string{`{"verdict":"pass","notes":"ok"}`, `{"verdict":"revise","notes":"1. x"}`, `{"verdict":"revise","notes":"2. y"}`},
+		fix:     `{"verdict":"fixed","notes":"Done."}`,
+	}
+	s, _, _ := setup(t, steps)
+	s.SetMode(ModeOn)
+	easy, _ := s.Add("proj", "write out.txt")
+	waitFor(t, s, easy.ID, finished)
+	hard, _ := s.Add("proj", "write out.txt properly")
+	waitFor(t, s, hard.ID, finished)
+
+	byID := map[string]ExampleSummary{}
+	list, _ := s.Examples("proj")
+	for _, e := range list {
+		byID[e.ID] = e
+	}
+	e := byID[easy.ID].Stats
+	if !e.Reviewed || !e.PassedFirstReview || e.ClaudeFixed || e.QwenRounds != 1 || e.ToolCalls != 1 || e.TestRuns != 0 {
+		t.Fatalf("easy: %+v", e)
+	}
+	h := byID[hard.ID].Stats
+	if h.PassedFirstReview || !h.ClaudeFixed || h.QwenRounds != 2 || h.ToolCalls != 2 {
+		t.Fatalf("hard: %+v", h)
+	}
+	// run_tests calls are counted from the transcript.
+	tr := json.RawMessage(`{"items":[{"kind":"tool","name":"run_tests"},{"kind":"tool","name":"read_file"},{"kind":"tool","name":"run_tests"},{"kind":"assistant","text":"ok"}]}`)
+	if st := statsOf(Example{Rounds: []ExampleRound{{Who: "qwen", Seconds: 60, Transcript: tr}}}); st.TestRuns != 2 || st.ToolCalls != 3 || st.Reviewed {
+		t.Fatalf("%+v", st)
+	}
+}

@@ -51,6 +51,18 @@
 .diff .d-file { font-weight: 700; background: var(--surface-2); }
 .log { padding: 8px 10px; white-space: pre-wrap; }
 
+.record { margin-top: 32px; }
+.record h2 { font-size: 18px; margin: 0 0 4px; }
+.record-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 12px 0; }
+.record-summary > div { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+.record-summary strong { display: block; margin-bottom: 4px; }
+.record-scroll { overflow-x: auto; }
+.record-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.record-table th, .record-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.record-table td.task { white-space: normal; min-width: 220px; }
+.record-table .yes { color: var(--ok); }
+.record-table .no { color: var(--bad); }
+
 @media (max-width: 600px) {
   .mode-buttons { display: flex; }
   .mode-buttons button { flex: 1; }

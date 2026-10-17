@@ -45,6 +45,18 @@
 
     <ul class="tasks" id="tasks"></ul>
     <p class="muted" id="empty" hidden>Nothing queued. Add a task above.</p>
+
+    <section class="record" id="record" hidden aria-labelledby="record-title">
+      <h2 id="record-title">Track record</h2>
+      <p class="muted small">Every finished attempt the local model made. "Examples" is how many earlier tasks it was shown; the summary compares attempts with and without them.</p>
+      <div id="record-summary" class="record-summary"></div>
+      <div class="record-scroll">
+        <table class="record-table">
+          <thead><tr><th>Finished</th><th>Task</th><th>Examples</th><th>Model time</th><th>Test runs</th><th>First review</th><th>Result</th></tr></thead>
+          <tbody id="record-rows"></tbody>
+        </table>
+      </div>
+    </section>
   </main>
 </body>
 </html>
