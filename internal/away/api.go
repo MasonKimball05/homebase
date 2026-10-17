@@ -17,6 +17,8 @@ import (
 //	POST /api/away/tasks/{id}/{action}   cancel, retry, accept, discard, delete
 //	GET  /api/away/tasks/{id}/diff       the branch against where it started (text)
 //	GET  /api/away/tasks/{id}/log        the end of its log (text)
+//	GET  /api/away/examples[?project=]   every finished attempt, newest first (examples.go)
+//	GET  /api/away/examples/{project}/{file}  one, in full
 func (s *Service) Register(mux *http.ServeMux, allowed func(*http.Request) bool) {
 	mux.HandleFunc("GET /api/away", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, s.View())
@@ -78,6 +80,23 @@ func (s *Service) Register(mux *http.ServeMux, allowed func(*http.Request) bool)
 			return
 		}
 		writeText(w, d)
+	})
+	mux.HandleFunc("GET /api/away/examples", func(w http.ResponseWriter, r *http.Request) {
+		list, err := s.Examples(r.URL.Query().Get("project"))
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, list)
+	})
+	mux.HandleFunc("GET /api/away/examples/{project}/{file}", func(w http.ResponseWriter, r *http.Request) {
+		b, err := s.ExampleJSON(r.PathValue("project") + "/" + r.PathValue("file"))
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no such example"})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(b)
 	})
 	mux.HandleFunc("GET /api/away/tasks/{id}/log", func(w http.ResponseWriter, r *http.Request) {
 		l, err := s.Log(r.PathValue("id"))

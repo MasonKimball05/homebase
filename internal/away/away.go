@@ -85,10 +85,11 @@ type Settings struct {
 	Push []string
 	// Tests: a project's test command for the local model's run_tests tool
 	// (Loom's runner can't work out every project's, e.g. Django's).
-	Tests     map[string]string
-	StatePath string // the queue, as JSON
-	IdlePath  string // written by `homebase -idle-report`
-	LogDir    string // one log per task
+	Tests       map[string]string
+	StatePath   string // the queue, as JSON
+	ExamplesDir string // one file per finished attempt (examples.go); "" = don't keep them
+	IdlePath    string // written by `homebase -idle-report`
+	LogDir      string // one log per task
 }
 
 // Projects finds a project's folder by id (internal/projects).
@@ -99,8 +100,9 @@ type Projects interface {
 // Steps does the work; Service decides when. (Real: steps.go; tests: a fake.)
 type Steps interface {
 	// Qwen runs the local model on the task in dir; its log goes to log.
-	// tests is the command behind its run_tests tool ("": the runner picks one).
-	Qwen(ctx context.Context, dir, task, tests string, log *os.File) error
+	// tests is the command behind its run_tests tool ("": the runner picks one);
+	// its transcript (Loom's conversation items, as JSON) goes to transcript.
+	Qwen(ctx context.Context, dir, task, tests, transcript string, log *os.File) error
 	// Claude runs Claude Code in dir with the prompt; edit lets it change files. Returns its reply.
 	Claude(ctx context.Context, dir, prompt string, edit bool, log *os.File) (string, error)
 }
@@ -365,6 +367,7 @@ func (s *Service) Act(ctx context.Context, id, action string) error {
 			return err
 		}
 		s.unpush(ctx, repo, task)
+		s.markExample(task, "accepted")
 		status = StatusAccepted
 	case "discard":
 		if task.Status != StatusDone && task.Status != StatusNeedsYou && task.Status != StatusFailed {
@@ -372,6 +375,7 @@ func (s *Service) Act(ctx context.Context, id, action string) error {
 		}
 		dropBranch(ctx, repo, s.worktree(task), task.Branch)
 		s.unpush(ctx, repo, task)
+		s.markExample(task, "discarded")
 		status = StatusDiscarded
 	case "retry":
 		if task.Status == StatusQueued || task.Status == StatusAccepted {
@@ -379,6 +383,7 @@ func (s *Service) Act(ctx context.Context, id, action string) error {
 		}
 		dropBranch(ctx, repo, s.worktree(task), task.Branch)
 		s.unpush(ctx, repo, task)
+		s.markExample(task, "retried")
 		status = StatusQueued
 	case "delete":
 		if task.Status == StatusDone || task.Status == StatusNeedsYou {
@@ -386,6 +391,7 @@ func (s *Service) Act(ctx context.Context, id, action string) error {
 		}
 		dropBranch(ctx, repo, s.worktree(task), task.Branch)
 		s.unpush(ctx, repo, task)
+		s.markExample(task, "removed")
 		s.mu.Lock()
 		for i, x := range s.st.Tasks {
 			if x.ID == id {

@@ -26,7 +26,8 @@ func (s *Service) runTask(ctx context.Context, id string) {
 		fmt.Fprintf(log, "\n==== %s  %s: %s\n", s.now().Format(time.RFC3339), task.Project, task.Text)
 	}
 
-	outcome, err := s.work(ctx, &task, log)
+	rec := newRecording()
+	outcome, err := s.work(ctx, &task, log, rec)
 	// A failure before anything was committed leaves no branch behind.
 	if err != nil && ctx.Err() == nil && task.Branch != "" && task.BaseCommit != "" {
 		if repo, ok := s.projects.Path(task.Project); ok {
@@ -47,6 +48,16 @@ func (s *Service) runTask(ctx context.Context, id string) {
 	} else {
 		// The branch keeps the work; the worktree isn't needed any more.
 		removeWorktree(context.Background(), repo, s.worktree(task))
+		// The example is written before the task shows as finished, so an
+		// Accept straight away always finds it to record the outcome on.
+		fin := task
+		fin.Finished = s.now()
+		if err != nil {
+			fin.Status, fin.Error = StatusFailed, err.Error()
+		} else {
+			fin.Status = outcome
+		}
+		s.saveExample(context.Background(), repo, fin, rec)
 	}
 
 	s.mu.Lock()
@@ -114,7 +125,7 @@ func notice(t Task) (string, string) {
 }
 
 // work: the worktree, the rounds, Claude's fix. Returns the final status.
-func (s *Service) work(ctx context.Context, t *Task, log *os.File) (string, error) {
+func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recording) (string, error) {
 	repo, ok := s.projects.Path(t.Project)
 	if !ok {
 		return "", errors.New("that project isn't listed any more")
@@ -150,7 +161,9 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File) (string, erro
 		if notes != "" {
 			prompt += "\n\nYour previous attempt is already committed on this branch. A reviewer looked at it and asked for these changes; make them:\n\n" + notes
 		}
-		qerr := s.steps.Qwen(ctx, wt, prompt, s.set.Tests[t.Project], log)
+		transcript := filepath.Join(s.set.LogDir, fmt.Sprintf("%s.round%d.qwen.json", t.ID, round))
+		rec.transcripts[len(t.Rounds)] = transcript // the qwen round about to be added
+		qerr := s.steps.Qwen(ctx, wt, prompt, s.set.Tests[t.Project], transcript, log)
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}

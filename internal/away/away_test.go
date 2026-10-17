@@ -1,6 +1,7 @@
 package away
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -41,7 +43,9 @@ type fakeSteps struct {
 	block   chan struct{} // if set, Qwen waits here (or for cancel)
 }
 
-func (f *fakeSteps) Qwen(ctx context.Context, dir, task, tests string, log *os.File) error {
+func (f *fakeSteps) Qwen(ctx context.Context, dir, task, tests, transcript string, log *os.File) error {
+	// What Loom's runner writes: the conversation, as items.
+	os.WriteFile(transcript, []byte(`{"model":"fake","ms":5,"items":[{"kind":"user","text":`+strconv.Quote(task)+`},{"kind":"tool","name":"read_file","args":{"path":"README.md"},"status":"done","result":"hi"},{"kind":"assistant","text":"Done.","thinking":"hmm"}]}`), 0o644)
 	f.mu.Lock()
 	f.prompts = append(f.prompts, task)
 	f.tests = append(f.tests, tests)
@@ -91,7 +95,7 @@ func setup(t *testing.T, steps Steps) (*Service, string, []string) {
 	run(t, repo, "commit", "-q", "-m", "start")
 	var notes []string
 	var mu sync.Mutex
-	s := New(Settings{Worktrees: filepath.Join(base, "wt"), StatePath: filepath.Join(base, "away.json"), IdlePath: filepath.Join(base, "idle.json"), LogDir: filepath.Join(base, "logs"), Rounds: 2, Tests: map[string]string{"proj": "npm test"}},
+	s := New(Settings{Worktrees: filepath.Join(base, "wt"), StatePath: filepath.Join(base, "away.json"), IdlePath: filepath.Join(base, "idle.json"), LogDir: filepath.Join(base, "logs"), Rounds: 2, Tests: map[string]string{"proj": "npm test"}, ExamplesDir: filepath.Join(base, "examples")},
 		fakeProjects{"proj": repo}, steps, func(title, body string) { mu.Lock(); notes = append(notes, title); mu.Unlock() }, t.Logf)
 	return s, repo, notes
 }
@@ -267,7 +271,7 @@ func TestCancelAndDiscard(t *testing.T) {
 		t.Fatal(err)
 	}
 	if strings.Contains(run(t, repo, "branch"), "away/") {
-		t.Fatal("discard kept the branch")
+		t.Fatalf("discard kept the branch\ntask: %+v\nbranches: %s\nworktrees: %s\nlog: %s", got, run(t, repo, "branch", "-v"), run(t, repo, "worktree", "list"), func() string { l, _ := s.Log(task.ID); return l }())
 	}
 }
 
@@ -451,5 +455,113 @@ func TestPushedBranchesAreRemovedFromOrigin(t *testing.T) {
 	// main was never pushed by Away (the accepted merge stays local).
 	if run(t, origin, "rev-parse", "main") == run(t, repo, "rev-parse", "main") {
 		t.Fatal("Away pushed main")
+	}
+}
+
+func readExample(t *testing.T, s *Service, id string) Example {
+	t.Helper()
+	list, err := s.Examples("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range list {
+		if e.ID == id {
+			b, err := s.ExampleJSON(e.Name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var ex Example
+			if err := json.Unmarshal(b, &ex); err != nil {
+				t.Fatal(err)
+			}
+			return ex
+		}
+	}
+	t.Fatalf("no example for %s in %+v", id, list)
+	return Example{}
+}
+
+func TestAFinishedAttemptIsKeptAsAnExample(t *testing.T) {
+	steps := &fakeSteps{reviews: []string{`{"verdict":"pass","notes":"Adds out.txt."}`}}
+	s, _, _ := setup(t, steps)
+	task, _ := s.Add("proj", "write out.txt")
+	s.SetMode(ModeOn)
+	waitFor(t, s, task.ID, finished)
+
+	ex := readExample(t, s, task.ID)
+	if ex.Author != "qwen" || ex.Status != StatusDone || ex.Verdict != "pass" || ex.Outcome != "" || ex.Task != "write out.txt" {
+		t.Fatalf("%+v", ex)
+	}
+	if len(ex.Files) != 1 || ex.Files[0] != "out.txt" || !strings.Contains(ex.FinalDiff, "+attempt 1") {
+		t.Fatalf("files %v, diff %q", ex.Files, ex.FinalDiff)
+	}
+	if len(ex.Rounds) != 2 || ex.Rounds[0].Who != "qwen" || !strings.Contains(ex.Rounds[0].Diff, "+attempt 1") || ex.Rounds[1].Notes != "Adds out.txt." {
+		t.Fatalf("rounds %+v", ex.Rounds)
+	}
+	var compact bytes.Buffer
+	json.Compact(&compact, ex.Rounds[0].Transcript)
+	tr := compact.String()
+	if !strings.Contains(tr, `"name":"read_file"`) || !strings.Contains(tr, "Done.") || strings.Contains(tr, "hmm") {
+		t.Fatalf("transcript (thinking should be dropped): %s", tr)
+	}
+
+	if err := s.Act(context.Background(), task.ID, "accept"); err != nil {
+		t.Fatal(err)
+	}
+	if ex := readExample(t, s, task.ID); ex.Outcome != "accepted" || ex.OutcomeAt.IsZero() {
+		t.Fatalf("outcome not recorded: %+v", ex)
+	}
+}
+
+func TestClaudesFixIsToldApartFromQwensWork(t *testing.T) {
+	steps := &fakeSteps{
+		reviews: []string{`{"verdict":"revise","notes":"1. fix it"}`, `{"verdict":"revise","notes":"2. still"}`},
+		fix:     `{"verdict":"fixed","notes":"Rewrote it."}`,
+	}
+	s, _, _ := setup(t, steps)
+	task, _ := s.Add("proj", "write out.txt")
+	s.SetMode(ModeOn)
+	waitFor(t, s, task.ID, finished)
+	ex := readExample(t, s, task.ID)
+	if ex.Author != "qwen+claude" {
+		t.Fatalf("author %q", ex.Author)
+	}
+	last := ex.Rounds[len(ex.Rounds)-1]
+	if last.Who != "claude-fix" || !strings.Contains(last.Diff, "+fixed by claude") || strings.Contains(ex.Rounds[0].Diff, "claude") {
+		t.Fatalf("rounds %+v", ex.Rounds)
+	}
+	if ex.Rounds[0].Transcript == nil || ex.Rounds[2].Transcript == nil || ex.Rounds[1].Transcript != nil {
+		t.Fatal("transcripts belong to the qwen rounds only")
+	}
+}
+
+func TestEveryAttemptGetsItsOwnExample(t *testing.T) {
+	steps := &fakeSteps{reviews: []string{`{"verdict":"pass","notes":"ok"}`, `{"verdict":"pass","notes":"ok"}`}}
+	s, _, _ := setup(t, steps)
+	now := time.Now()
+	s.now = func() time.Time { return now }
+	task, _ := s.Add("proj", "write out.txt")
+	s.SetMode(ModeOn)
+	waitFor(t, s, task.ID, finished)
+	if err := s.Act(context.Background(), task.ID, "retry"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Minute)
+	waitFor(t, s, task.ID, func(x *Task) bool { return finished(x) && x.Started.Equal(now) })
+	list, _ := s.Examples("proj")
+	if len(list) != 2 || list[1].Outcome != "retried" || list[0].Outcome != "" {
+		t.Fatalf("%+v", list)
+	}
+	if other, _ := s.Examples("elsewhere"); len(other) != 0 {
+		t.Fatalf("filter: %+v", other)
+	}
+}
+
+func TestExampleNamesStayInTheirFolder(t *testing.T) {
+	s, _, _ := setup(t, &fakeSteps{})
+	for _, bad := range []string{"../away.json", "proj/../../x.json", "proj/1015-120000@20261015-120000.json/../../../etc", "/etc/passwd"} {
+		if _, err := s.ExampleJSON(bad); err == nil {
+			t.Errorf("read %q", bad)
+		}
 	}
 }
