@@ -143,11 +143,26 @@ func New(set Settings, projects Projects, steps Steps, notify func(title, body s
 	if b, err := os.ReadFile(set.StatePath); err == nil {
 		_ = json.Unmarshal(b, &s.st)
 	}
-	// homebase stopped mid-task last time: that task starts over.
+	// homebase stopped mid-task last time (a restart, an update): its
+	// worktree and branch are still there. With commits on the branch, that's
+	// work worth keeping: it stops there for you to look at (Accept, Discard,
+	// Try again). With none, it's cleared and the task starts over.
 	for _, t := range s.st.Tasks {
-		if t.Status == StatusRunning {
-			t.Status, t.Stage = StatusQueued, ""
+		if t.Status != StatusRunning {
+			continue
 		}
+		repo, _ := projects.Path(t.Project)
+		if repo != "" && t.Branch != "" && t.BaseCommit != "" {
+			removeWorktree(context.Background(), repo, s.worktree(*t))
+			if out, err := git(context.Background(), repo, "rev-list", "--count", t.BaseCommit+".."+t.Branch); err == nil && strings.TrimSpace(out) != "0" {
+				t.Status, t.Stage, t.Finished = StatusFailed, "", s.now()
+				t.Error = "homebase restarted during this attempt; what it had done is on the branch (Changes), unreviewed"
+				continue
+			}
+			dropBranch(context.Background(), repo, "", t.Branch)
+		}
+		t.Status, t.Stage = StatusQueued, ""
+		t.Branch, t.Base, t.BaseCommit, t.Rounds, t.Changed = "", "", "", []Round{}, 0
 	}
 	if s.st.Mode != ModeOn && s.st.Mode != ModeIdle {
 		s.st.Mode = ModeOff
@@ -360,9 +375,11 @@ func (s *Service) Act(ctx context.Context, id, action string) error {
 	var status string
 	switch action {
 	case "accept":
-		if task.Status != StatusDone && task.Status != StatusNeedsYou {
+		// A failed attempt can be accepted when it left commits (you've seen the diff).
+		if task.Status != StatusDone && task.Status != StatusNeedsYou && !(task.Status == StatusFailed && task.Branch != "") {
 			return errors.New("only a finished task can be accepted")
 		}
+		removeWorktree(ctx, repo, s.worktree(task)) // a leftover worktree would keep the branch from being deleted
 		if err := accept(ctx, repo, task); err != nil {
 			return err
 		}

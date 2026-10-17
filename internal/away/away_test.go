@@ -359,14 +359,60 @@ func TestSkipCommit(t *testing.T) {
 	}
 }
 
-func TestRunningTaskStartsOverAfterARestart(t *testing.T) {
-	dir := t.TempDir()
-	st := state{Mode: ModeOn, Tasks: []*Task{{ID: "1015-120000", Status: StatusRunning, Rounds: []Round{}}}}
-	b, _ := json.Marshal(st)
-	os.WriteFile(filepath.Join(dir, "away.json"), b, 0o600)
-	s := New(Settings{StatePath: filepath.Join(dir, "away.json")}, fakeProjects{}, &fakeSteps{}, nil, t.Logf)
-	if v := s.View(); v.Tasks[0].Status != StatusQueued || v.Mode != ModeOn {
-		t.Fatalf("%+v", v)
+func TestARestartMidTaskKeepsWorkThatWasCommitted(t *testing.T) {
+	// A first attempt gets as far as a commit, then homebase "restarts"
+	// (a new Service over the same state file and repo).
+	steps := &fakeSteps{reviews: []string{`{"verdict":"pass","notes":"ok"}`}, block: make(chan struct{})}
+	s, repo, _ := setup(t, steps)
+	task, _ := s.Add("proj", "write out.txt")
+	s.SetMode(ModeOn)
+	running := waitFor(t, s, task.ID, func(x *Task) bool { return strings.HasPrefix(x.Stage, "local model") })
+	wt := s.worktree(running)
+	os.WriteFile(filepath.Join(wt, "out.txt"), []byte("work\n"), 0o644)
+	run(t, wt, "add", "out.txt")
+	run(t, wt, "commit", "-q", "-m", "round 1")
+	s.mu.Lock()
+	s.saveLocked() // the state file as homebase left it, mid-task
+	s.mu.Unlock()
+
+	s2 := New(s.set, fakeProjects{"proj": repo}, &fakeSteps{}, nil, t.Logf)
+	got := s2.View().Tasks[0]
+	if got.Status != StatusFailed || !strings.Contains(got.Error, "restarted") || got.Branch != running.Branch {
+		t.Fatalf("%+v", got)
+	}
+	if _, err := os.Stat(wt); err == nil {
+		t.Fatal("the stale worktree was left")
+	}
+	// You can still take the work.
+	if err := s2.Act(context.Background(), task.ID, "accept"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(repo, "out.txt")); string(b) != "work\n" {
+		t.Fatalf("not merged: %q", b)
+	}
+	close(steps.block)
+}
+
+func TestARestartBeforeAnyCommitStartsOver(t *testing.T) {
+	steps := &fakeSteps{reviews: []string{`{"verdict":"pass","notes":"ok"}`}, block: make(chan struct{})}
+	s, repo, _ := setup(t, steps)
+	task, _ := s.Add("proj", "write out.txt")
+	s.SetMode(ModeOn)
+	running := waitFor(t, s, task.ID, func(x *Task) bool { return strings.HasPrefix(x.Stage, "local model") })
+	s.mu.Lock()
+	s.saveLocked()
+	s.mu.Unlock()
+	s2 := New(s.set, fakeProjects{"proj": repo}, &fakeSteps{reviews: []string{`{"verdict":"pass","notes":"ok"}`}}, nil, t.Logf)
+	if got := s2.View().Tasks[0]; got.Status != StatusQueued || got.Branch != "" {
+		t.Fatalf("%+v", got)
+	}
+	if strings.Contains(run(t, repo, "branch"), running.Branch) {
+		t.Fatal("the empty branch was left, so the next attempt couldn't make it")
+	}
+	close(steps.block)
+	// And the next attempt works (the old failure: "couldn't make a worktree").
+	if got := waitFor(t, s2, task.ID, finished); got.Status != StatusDone {
+		t.Fatalf("%+v", got)
 	}
 }
 
@@ -381,6 +427,9 @@ func TestAFailureLeavesNoEmptyBranch(t *testing.T) {
 	}
 	if strings.Contains(run(t, repo, "branch"), "away/") {
 		t.Fatal("an empty branch was left behind")
+	}
+	if list, _ := s.Examples(""); len(list) != 0 {
+		t.Fatalf("the model never ran, so there's nothing to keep: %+v", list)
 	}
 }
 

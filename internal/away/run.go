@@ -147,6 +147,10 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 	s.update(t.ID, func(x *Task) { x.Base, x.BaseCommit, x.Branch = t.Base, t.BaseCommit, t.Branch })
 	wt := s.worktree(*t)
 	_ = os.MkdirAll(s.set.Worktrees, 0o755)
+	// A branch by this name left over from an attempt that never cleaned up: clear it.
+	if _, err := git(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+t.Branch); err == nil {
+		dropBranch(ctx, repo, wt, t.Branch)
+	}
 	if _, err := git(ctx, repo, "worktree", "add", "-b", t.Branch, wt, t.BaseCommit); err != nil {
 		return "", fmt.Errorf("couldn't make a worktree: %v", err)
 	}

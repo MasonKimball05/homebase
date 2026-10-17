@@ -83,7 +83,8 @@ func (s *Service) exampleFile(t Task) string {
 
 // saveExample writes the attempt's example. Called when it finishes, while its branch still exists.
 func (s *Service) saveExample(ctx context.Context, repo string, t Task, rec *recording) {
-	if s.set.ExamplesDir == "" || t.Started.IsZero() {
+	// Nothing ran (a failure setting up, before the model's first round): nothing to learn from.
+	if s.set.ExamplesDir == "" || t.Started.IsZero() || len(t.Rounds) == 0 {
 		return
 	}
 	ex := Example{
