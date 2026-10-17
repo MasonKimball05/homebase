@@ -21,6 +21,7 @@
     "idle_minutes": 20,
     "rounds": 2,
     "push": ["Parliament-Dev"],
+    "tests": { "Parliament-Dev": "python manage.py test --noinput" },
     "path": ["C:\\Users\\Admin\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\\LocalCache\\local-packages\\Python311\\Scripts"]
   },
   "apps": [

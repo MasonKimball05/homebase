@@ -22,7 +22,10 @@ type CLI struct {
 }
 
 // env is this process's environment with Path in front of PATH, plus extra.
+// Python runs in UTF-8 mode: on Windows its default code page can't print
+// (or pip read) the Unicode that projects' output and files contain.
 func (c CLI) env(extra ...string) []string {
+	extra = append([]string{"PYTHONUTF8=1"}, extra...)
 	out := make([]string, 0, len(os.Environ())+len(extra))
 	for _, kv := range os.Environ() {
 		if i := strings.IndexByte(kv, '='); i > 0 && strings.EqualFold(kv[:i], "PATH") && len(c.Path) > 0 {
@@ -40,7 +43,7 @@ const (
 
 // Qwen: `npx vitest run --config tools/qwen/vitest.config.ts` in the Loom
 // checkout, pointed at the worktree (see tools/qwen/run.test.ts there).
-func (c CLI) Qwen(ctx context.Context, dir, task string, log *os.File) error {
+func (c CLI) Qwen(ctx context.Context, dir, task, tests string, log *os.File) error {
 	if _, err := os.Stat(filepath.Join(c.Runner, "tools", "qwen", "run.test.ts")); err != nil {
 		return fmt.Errorf("no tools/qwen/run.test.ts in %s: pull Loom there", c.Runner)
 	}
@@ -55,7 +58,7 @@ func (c CLI) Qwen(ctx context.Context, dir, task string, log *os.File) error {
 	transcript := filepath.Join(c.LogDir, filepath.Base(dir)+".qwen.json")
 	cmd.Env = c.env(
 		"QWEN_DIR="+dir, "QWEN_TASK="+task, "QWEN_HOST="+c.Ollama, "QWEN_MODEL="+c.Model,
-		"QWEN_OUT="+transcript, "QWEN_MAX_CALLS=60", "CI=1", "NO_COLOR=1", "FORCE_COLOR=0")
+		"QWEN_OUT="+transcript, "QWEN_MAX_CALLS=60", "CI=1", "NO_COLOR=1", "FORCE_COLOR=0", "QWEN_TESTS="+tests)
 	cmd.Stdout, cmd.Stderr = writer(log), writer(log)
 	cmd.WaitDelay = 10 * time.Second
 	stoppable(cmd)

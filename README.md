@@ -293,6 +293,9 @@ never committed.
   "idle_minutes": 20,
   "rounds": 2,
   "push": ["Parliament-Dev"],
+  // the local model's run_tests command per project; it adds the module it
+  // wants (Loom picks npm test, pytest… itself, but not Django's)
+  "tests": { "Parliament-Dev": "python manage.py test --noinput" },
   // folders put in front of PATH for Away's runs (where pip put ruff)
   "path": ["C:\\Users\\Admin\\AppData\\Local\\Packages\\…\\Python311\\Scripts"]
 }

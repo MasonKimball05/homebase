@@ -37,12 +37,14 @@ type fakeSteps struct {
 	fix     string
 	qwen    func(dir, task string) error
 	prompts []string
+	tests   []string
 	block   chan struct{} // if set, Qwen waits here (or for cancel)
 }
 
-func (f *fakeSteps) Qwen(ctx context.Context, dir, task string, log *os.File) error {
+func (f *fakeSteps) Qwen(ctx context.Context, dir, task, tests string, log *os.File) error {
 	f.mu.Lock()
 	f.prompts = append(f.prompts, task)
+	f.tests = append(f.tests, tests)
 	n := len(f.prompts)
 	f.mu.Unlock()
 	if f.block != nil {
@@ -89,7 +91,7 @@ func setup(t *testing.T, steps Steps) (*Service, string, []string) {
 	run(t, repo, "commit", "-q", "-m", "start")
 	var notes []string
 	var mu sync.Mutex
-	s := New(Settings{Worktrees: filepath.Join(base, "wt"), StatePath: filepath.Join(base, "away.json"), IdlePath: filepath.Join(base, "idle.json"), LogDir: filepath.Join(base, "logs"), Rounds: 2},
+	s := New(Settings{Worktrees: filepath.Join(base, "wt"), StatePath: filepath.Join(base, "away.json"), IdlePath: filepath.Join(base, "idle.json"), LogDir: filepath.Join(base, "logs"), Rounds: 2, Tests: map[string]string{"proj": "npm test"}},
 		fakeProjects{"proj": repo}, steps, func(title, body string) { mu.Lock(); notes = append(notes, title); mu.Unlock() }, t.Logf)
 	return s, repo, notes
 }
@@ -123,6 +125,9 @@ func TestPassesReviewAndWaitsForYou(t *testing.T) {
 	}
 	s.SetMode(ModeOn)
 	got := waitFor(t, s, task.ID, finished)
+	if len(steps.tests) != 1 || steps.tests[0] != "npm test" {
+		t.Fatalf("the project's test command didn't reach the model: %q", steps.tests)
+	}
 	if got.Status != StatusDone || got.Verdict != "pass" || got.Changed != 1 || got.Base != "main" {
 		t.Fatalf("%+v", got)
 	}

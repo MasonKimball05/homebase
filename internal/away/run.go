@@ -150,7 +150,7 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File) (string, erro
 		if notes != "" {
 			prompt += "\n\nYour previous attempt is already committed on this branch. A reviewer looked at it and asked for these changes; make them:\n\n" + notes
 		}
-		qerr := s.steps.Qwen(ctx, wt, prompt, log)
+		qerr := s.steps.Qwen(ctx, wt, prompt, s.set.Tests[t.Project], log)
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}

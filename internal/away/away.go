@@ -82,7 +82,10 @@ type Settings struct {
 	IdleMinutes, Rounds                      int
 	// Push: projects whose away/… branches are pushed to their origin when
 	// done (a private clone you review on GitHub). Never main, never --force.
-	Push      []string
+	Push []string
+	// Tests: a project's test command for the local model's run_tests tool
+	// (Loom's runner can't work out every project's, e.g. Django's).
+	Tests     map[string]string
 	StatePath string // the queue, as JSON
 	IdlePath  string // written by `homebase -idle-report`
 	LogDir    string // one log per task
@@ -96,7 +99,8 @@ type Projects interface {
 // Steps does the work; Service decides when. (Real: steps.go; tests: a fake.)
 type Steps interface {
 	// Qwen runs the local model on the task in dir; its log goes to log.
-	Qwen(ctx context.Context, dir, task string, log *os.File) error
+	// tests is the command behind its run_tests tool ("": the runner picks one).
+	Qwen(ctx context.Context, dir, task, tests string, log *os.File) error
 	// Claude runs Claude Code in dir with the prompt; edit lets it change files. Returns its reply.
 	Claude(ctx context.Context, dir, prompt string, edit bool, log *os.File) (string, error)
 }

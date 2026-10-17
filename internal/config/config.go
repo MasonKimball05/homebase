@@ -61,6 +61,10 @@ type Away struct {
 	// Path: folders put in front of PATH for the local model's checks and
 	// Claude Code (e.g. Python's user Scripts folder, where pip put ruff).
 	Path []string `json:"path,omitempty"`
+	// Tests: a project's test command for the local model's run_tests tool,
+	// by project id, e.g. {"Parliament-Dev": "python manage.py test src"}.
+	// Without one Loom's runner picks one itself (npm test, pytest…) or none.
+	Tests map[string]string `json:"tests,omitempty"`
 }
 
 // Projects lists the folders whose git repos the Projects page shows.
