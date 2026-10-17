@@ -65,6 +65,9 @@ type Away struct {
 	// by project id, e.g. {"Parliament-Dev": "python manage.py test src"}.
 	// Without one Loom's runner picks one itself (npm test, pytest…) or none.
 	Tests map[string]string `json:"tests,omitempty"`
+	// EmbedModel finds similar past tasks to show the local model (Ollama).
+	// Default "nomic-embed-text"; "off" shows none.
+	EmbedModel string `json:"embed_model,omitempty"`
 }
 
 // Projects lists the folders whose git repos the Projects page shows.

@@ -43,12 +43,14 @@ type Example struct {
 	Outcome   string    `json:"outcome"`
 	OutcomeAt time.Time `json:"outcomeAt,omitzero"`
 
-	Base       string         `json:"base,omitempty"`
-	BaseCommit string         `json:"baseCommit,omitempty"`
-	Branch     string         `json:"branch,omitempty"`
-	Files      []string       `json:"files"`
-	Rounds     []ExampleRound `json:"rounds"`
-	FinalDiff  string         `json:"finalDiff"`
+	Base       string   `json:"base,omitempty"`
+	BaseCommit string   `json:"baseCommit,omitempty"`
+	Branch     string   `json:"branch,omitempty"`
+	Files      []string `json:"files"`
+	// Shown: the earlier examples the local model was shown (recall.go).
+	Shown     []string       `json:"shown,omitempty"`
+	Rounds    []ExampleRound `json:"rounds"`
+	FinalDiff string         `json:"finalDiff"`
 }
 
 type ExampleRound struct {
@@ -90,7 +92,7 @@ func (s *Service) saveExample(ctx context.Context, repo string, t Task, rec *rec
 	ex := Example{
 		Version: exampleVersion, ID: t.ID, Project: t.Project, Task: t.Text, Started: t.Started, Finished: t.Finished,
 		Status: t.Status, Verdict: t.Verdict, Notes: t.Notes, Error: t.Error,
-		Base: t.Base, BaseCommit: t.BaseCommit, Branch: t.Branch, Files: []string{}, Rounds: []ExampleRound{},
+		Base: t.Base, BaseCommit: t.BaseCommit, Branch: t.Branch, Files: []string{}, Rounds: []ExampleRound{}, Shown: t.Shown,
 	}
 	author := "none"
 	for i, r := range t.Rounds {

@@ -247,6 +247,10 @@ func run(configPath string) error {
 				claude = "claude"
 			}
 			logDir := filepath.Join(cfg.LogDir, "away")
+			embedModel := cfg.Away.EmbedModel
+			if embedModel == "" {
+				embedModel = "nomic-embed-text"
+			}
 			steps := away.CLI{Runner: cfg.Away.Runner, ClaudePath: claude, Ollama: ollama, Model: model, LogDir: logDir, Path: cfg.Away.Path}
 			notify := func(title, body string) {
 				if notifier != nil {
@@ -258,7 +262,7 @@ func run(configPath string) error {
 			svc := away.New(away.Settings{
 				Runner: cfg.Away.Runner, Worktrees: cfg.Away.Worktrees, Claude: claude, Ollama: ollama, Model: model,
 				IdleMinutes: cfg.Away.IdleMinutes, Rounds: cfg.Away.Rounds, Push: cfg.Away.Push, Tests: cfg.Away.Tests,
-				StatePath: filepath.Join(dir, "away.json"), ExamplesDir: filepath.Join(dir, "away-examples"), IdlePath: filepath.Join(dir, "away-idle.json"), LogDir: logDir,
+				StatePath: filepath.Join(dir, "away.json"), ExamplesDir: filepath.Join(dir, "away-examples"), EmbedModel: embedModel, IdlePath: filepath.Join(dir, "away-idle.json"), LogDir: logDir,
 			}, browser, steps, notify, logf)
 			go svc.Run(ctx)
 			dash = dash.WithAway(svc)

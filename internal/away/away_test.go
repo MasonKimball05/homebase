@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -612,5 +613,99 @@ func TestExampleNamesStayInTheirFolder(t *testing.T) {
 		if _, err := s.ExampleJSON(bad); err == nil {
 			t.Errorf("read %q", bad)
 		}
+	}
+}
+
+// wordEmbedder: a vector of word counts over a small vocabulary, so tasks
+// that share words are "similar" and ones that don't aren't.
+func wordEmbedder(calls *int) Embedder {
+	vocab := []string{"tests", "house", "kai", "check", "csv", "export", "readme", "out.txt", "write"}
+	return func(ctx context.Context, texts []string) ([][]float64, error) {
+		*calls++
+		out := make([][]float64, len(texts))
+		for i, t := range texts {
+			v := make([]float64, len(vocab))
+			for j, w := range vocab {
+				v[j] = float64(strings.Count(strings.ToLower(t), w))
+			}
+			out[i] = v
+		}
+		return out, nil
+	}
+}
+
+func TestSimilarAcceptedWorkIsShownToTheModel(t *testing.T) {
+	steps := &fakeSteps{
+		reviews: []string{`{"verdict":"revise","notes":"1. put the file in docs/"}`, `{"verdict":"pass","notes":"Writes out.txt."}`, `{"verdict":"pass","notes":"ok"}`, `{"verdict":"pass","notes":"ok"}`, `{"verdict":"pass","notes":"ok"}`},
+	}
+	s, _, _ := setup(t, steps)
+	calls := 0
+	s.embed = wordEmbedder(&calls)
+	s.set.EmbedModel = "fake"
+	s.SetMode(ModeOn)
+
+	first, _ := s.Add("proj", "write out.txt with tests")
+	waitFor(t, s, first.ID, finished)
+	if err := s.Act(context.Background(), first.ID, "accept"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Similar: it gets the accepted diff, the reviewer's note and its first attempt's lesson.
+	second, _ := s.Add("proj", "write out.txt again, with tests")
+	got := waitFor(t, s, second.ID, finished)
+	prompt := steps.prompts[len(steps.prompts)-1]
+	for _, want := range []string{"How similar tasks went before", "Accepted: write out.txt with tests", "+attempt", "Writes out.txt.", "put the file in docs/"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("prompt lacks %q:\n%s", want, prompt)
+		}
+	}
+	if len(got.Shown) != 1 {
+		t.Fatalf("shown: %v", got.Shown)
+	}
+	if ex := readExample(t, s, second.ID); len(ex.Shown) != 1 || ex.Shown[0] != got.Shown[0] {
+		t.Fatalf("the example doesn't record what was shown: %v", ex.Shown)
+	}
+
+	// Unrelated: nothing is shown.
+	third, _ := s.Add("proj", "csv export")
+	got = waitFor(t, s, third.ID, finished)
+	if len(got.Shown) != 0 || strings.Contains(steps.prompts[len(steps.prompts)-1], "How similar") {
+		t.Fatalf("shown for an unrelated task: %v", got.Shown)
+	}
+	// Each example's vector is embedded once, then cached.
+	before := calls
+	fourth, _ := s.Add("proj", "write out.txt, tests too")
+	waitFor(t, s, fourth.ID, finished)
+	if calls != before+1 {
+		t.Fatalf("embed calls %d -> %d (cache not used?)", before, calls)
+	}
+}
+
+func TestRecallNeverStopsATask(t *testing.T) {
+	steps := &fakeSteps{reviews: []string{`{"verdict":"pass","notes":"ok"}`, `{"verdict":"pass","notes":"ok"}`}}
+	s, _, _ := setup(t, steps)
+	s.set.EmbedModel = "fake"
+	s.SetMode(ModeOn)
+	first, _ := s.Add("proj", "write out.txt")
+	waitFor(t, s, first.ID, finished)
+	s.Act(context.Background(), first.ID, "accept")
+	s.embed = func(ctx context.Context, texts []string) ([][]float64, error) {
+		return nil, fmt.Errorf("ollama is down")
+	}
+	second, _ := s.Add("proj", "write out.txt")
+	if got := waitFor(t, s, second.ID, finished); got.Status != StatusDone || len(got.Shown) != 0 {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestCosine(t *testing.T) {
+	if c := cosine([]float64{1, 0}, []float64{1, 0}); math.Abs(c-1) > 1e-9 {
+		t.Fatal(c)
+	}
+	if c := cosine([]float64{1, 0}, []float64{0, 1}); c != 0 {
+		t.Fatal(c)
+	}
+	if cosine(nil, []float64{1}) != 0 || cosine([]float64{0, 0}, []float64{1, 1}) != 0 {
+		t.Fatal("degenerate vectors")
 	}
 }

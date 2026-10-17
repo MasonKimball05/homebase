@@ -57,23 +57,25 @@ type Round struct {
 }
 
 type Task struct {
-	ID         string    `json:"id"`
-	Project    string    `json:"project"`
-	Text       string    `json:"text"`
-	Status     string    `json:"status"`
-	Stage      string    `json:"stage,omitempty"` // what it's doing now, while running
-	Branch     string    `json:"branch,omitempty"`
-	Base       string    `json:"base,omitempty"` // the branch it started from (Accept merges into it)
-	BaseCommit string    `json:"baseCommit,omitempty"`
-	Verdict    string    `json:"verdict,omitempty"` // "pass", "fixed", "fail"
-	Notes      string    `json:"notes,omitempty"`   // Claude's last word, for you
-	Rounds     []Round   `json:"rounds"`
-	Error      string    `json:"error,omitempty"`
-	Changed    int       `json:"changed"` // files changed on the branch
-	Pushed     bool      `json:"pushed,omitempty"`
-	Created    time.Time `json:"created"`
-	Started    time.Time `json:"started,omitzero"`
-	Finished   time.Time `json:"finished,omitzero"`
+	ID         string  `json:"id"`
+	Project    string  `json:"project"`
+	Text       string  `json:"text"`
+	Status     string  `json:"status"`
+	Stage      string  `json:"stage,omitempty"` // what it's doing now, while running
+	Branch     string  `json:"branch,omitempty"`
+	Base       string  `json:"base,omitempty"` // the branch it started from (Accept merges into it)
+	BaseCommit string  `json:"baseCommit,omitempty"`
+	Verdict    string  `json:"verdict,omitempty"` // "pass", "fixed", "fail"
+	Notes      string  `json:"notes,omitempty"`   // Claude's last word, for you
+	Rounds     []Round `json:"rounds"`
+	Error      string  `json:"error,omitempty"`
+	Changed    int     `json:"changed"` // files changed on the branch
+	Pushed     bool    `json:"pushed,omitempty"`
+	// Shown: the examples (recall.go) the local model was shown for this attempt.
+	Shown    []string  `json:"shown,omitempty"`
+	Created  time.Time `json:"created"`
+	Started  time.Time `json:"started,omitzero"`
+	Finished time.Time `json:"finished,omitzero"`
 }
 
 // Settings is what Service needs (config.Away with defaults filled in, plus paths).
@@ -88,6 +90,7 @@ type Settings struct {
 	Tests       map[string]string
 	StatePath   string // the queue, as JSON
 	ExamplesDir string // one file per finished attempt (examples.go); "" = don't keep them
+	EmbedModel  string // for recall.go (Ollama); "" or "off" = don't show examples
 	IdlePath    string // written by `homebase -idle-report`
 	LogDir      string // one log per task
 }
@@ -118,6 +121,7 @@ type Service struct {
 	steps    Steps
 	notify   func(title, body string)
 	logf     func(string, ...any)
+	embed    Embedder // for recall.go; nil = no examples shown
 	now      func() time.Time
 
 	mu      sync.Mutex
@@ -139,6 +143,9 @@ func New(set Settings, projects Projects, steps Steps, notify func(title, body s
 		notify = func(string, string) {}
 	}
 	s := &Service{set: set, projects: projects, steps: steps, notify: notify, logf: logf, now: time.Now, wake: make(chan struct{}, 1)}
+	if set.EmbedModel != "" && set.EmbedModel != "off" && set.Ollama != "" {
+		s.embed = OllamaEmbedder(set.Ollama, set.EmbedModel)
+	}
 	s.st = state{Mode: ModeOff}
 	if b, err := os.ReadFile(set.StatePath); err == nil {
 		_ = json.Unmarshal(b, &s.st)
@@ -162,7 +169,7 @@ func New(set Settings, projects Projects, steps Steps, notify func(title, body s
 			dropBranch(context.Background(), repo, "", t.Branch)
 		}
 		t.Status, t.Stage = StatusQueued, ""
-		t.Branch, t.Base, t.BaseCommit, t.Rounds, t.Changed = "", "", "", []Round{}, 0
+		t.Branch, t.Base, t.BaseCommit, t.Rounds, t.Changed, t.Shown = "", "", "", []Round{}, 0, nil
 	}
 	if s.st.Mode != ModeOn && s.st.Mode != ModeIdle {
 		s.st.Mode = ModeOff
@@ -427,7 +434,7 @@ func (s *Service) Act(ctx context.Context, id, action string) error {
 		t.Status = status
 		if status == StatusQueued {
 			t.Branch, t.Base, t.BaseCommit, t.Verdict, t.Notes, t.Error, t.Rounds, t.Changed = "", "", "", "", "", "", []Round{}, 0
-			t.Pushed = false
+			t.Pushed, t.Shown = false, nil
 		}
 	}
 	s.saveLocked()

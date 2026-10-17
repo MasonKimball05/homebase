@@ -69,7 +69,7 @@ func (s *Service) runTask(ctx context.Context, id string) {
 		case interrupted && !stopped:
 			// Paused (you came back, or switched it off): start over later, same place in the queue.
 			t.Status, t.Stage = StatusQueued, ""
-			t.Branch, t.Base, t.BaseCommit, t.Rounds, t.Changed = "", "", "", []Round{}, 0
+			t.Branch, t.Base, t.BaseCommit, t.Rounds, t.Changed, t.Shown = "", "", "", []Round{}, 0, nil
 		case interrupted:
 			t.Status, t.Stage, t.Finished = StatusCancelled, "", s.now()
 		case err != nil:
@@ -156,12 +156,21 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 	}
 	local := linkDeps(repo, wt, log)
 
+	// How similar tasks went before (recall.go), shown with the task in every round.
+	stage("looking for similar past tasks")
+	examples, shown := s.recall(ctx, *t)
+	t.Shown = shown
+	s.update(t.ID, func(x *Task) { x.Shown = shown })
+	if len(shown) > 0 && log != nil {
+		fmt.Fprintf(log, "---- shown %d earlier example(s): %s\n", len(shown), strings.Join(shown, ", "))
+	}
+
 	notes := ""
 	verdict := ""
 	for round := 1; round <= s.set.Rounds; round++ {
 		stage(fmt.Sprintf("local model, round %d of %d", round, s.set.Rounds))
 		started := time.Now()
-		prompt := t.Text
+		prompt := t.Text + examples
 		if notes != "" {
 			prompt += "\n\nYour previous attempt is already committed on this branch. A reviewer looked at it and asked for these changes; make them:\n\n" + notes
 		}
