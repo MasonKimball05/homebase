@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -150,6 +151,35 @@ func (c CLI) Claude(ctx context.Context, dir, prompt string, edit bool, log *os.
 }
 
 const testTools = "Bash(python manage.py test:*),Bash(python -m pytest:*),Bash(npm test:*),Bash(npx vitest run:*),Bash(go test:*),Bash(cargo test:*)"
+
+// Tests runs a test command line in the worktree (a shell line, like run_tests).
+func (c CLI) Tests(ctx context.Context, dir, command string, log *os.File) (bool, string) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.CommandContext(ctx, "cmd", "/C", command)
+	} else {
+		cmd = exec.CommandContext(ctx, "sh", "-c", command)
+	}
+	cmd.Dir = dir
+	cmd.Env = c.env("CI=1", "NO_COLOR=1")
+	var out strings.Builder
+	cmd.Stdout, cmd.Stderr = &out, &out
+	cmd.WaitDelay = 10 * time.Second
+	stoppable(cmd)
+	if log != nil {
+		fmt.Fprintf(log, "---- running %s\n", command)
+	}
+	err := cmd.Run()
+	if log != nil {
+		fmt.Fprintf(log, "%s\n---- %s\n", tailText(out.String(), 4000), map[bool]string{true: "passed", false: "failed"}[err == nil])
+	}
+	if ctx.Err() == context.DeadlineExceeded {
+		return false, out.String() + "\n(stopped after 15 minutes)"
+	}
+	return err == nil, out.String()
+}
 
 func writer(f *os.File) io.Writer {
 	if f == nil {

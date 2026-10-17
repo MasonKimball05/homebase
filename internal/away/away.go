@@ -106,6 +106,8 @@ type Steps interface {
 	// tests is the command behind its run_tests tool ("": the runner picks one);
 	// its transcript (Loom's conversation items, as JSON) goes to transcript.
 	Qwen(ctx context.Context, dir, task, tests, transcript string, log *os.File) error
+	// Tests runs a test command line in dir: whether it passed, and its output.
+	Tests(ctx context.Context, dir, command string, log *os.File) (bool, string)
 	// Claude runs Claude Code in dir with the prompt; edit lets it change files. Returns its reply.
 	Claude(ctx context.Context, dir, prompt string, edit bool, log *os.File) (string, error)
 }

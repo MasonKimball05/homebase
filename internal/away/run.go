@@ -193,9 +193,31 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 		}
 		t.Rounds = append(t.Rounds, Round{Who: "qwen", Seconds: int(time.Since(started).Seconds()), Commit: sha, Notes: errText(qerr)})
 
+		// Its own tests first: a failing round goes straight back (or to
+		// Claude's fix), without spending a review on it.
+		ran := ""
+		if base := s.set.Tests[t.Project]; base != "" {
+			if targets := testTargets(base, changedTestFiles(ctx, wt, t.BaseCommit)); len(targets) > 0 {
+				line := base + " " + strings.Join(targets, " ")
+				stage(fmt.Sprintf("running its tests, round %d", round))
+				started = time.Now()
+				ok, out := s.steps.Tests(ctx, wt, line, log)
+				if ctx.Err() != nil {
+					return "", ctx.Err()
+				}
+				if !ok {
+					t.Rounds = append(t.Rounds, Round{Who: "tests", Verdict: "fail", Notes: tailText(out, 1500), Seconds: int(time.Since(started).Seconds())})
+					verdict, notes = "revise", fmt.Sprintf("Your tests fail. `%s` says:\n\n%s\n\nMake them pass, then stop.", line, tailText(out, 3000))
+					continue
+				}
+				t.Rounds = append(t.Rounds, Round{Who: "tests", Verdict: "pass", Seconds: int(time.Since(started).Seconds())})
+				ran = line
+			}
+		}
+
 		stage(fmt.Sprintf("Claude reviewing round %d", round))
 		started = time.Now()
-		reply, err := s.steps.Claude(ctx, wt, reviewPrompt(*t), false, log)
+		reply, err := s.steps.Claude(ctx, wt, reviewPrompt(*t, ran), false, log)
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
@@ -245,6 +267,48 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 	return StatusDone, nil
 }
 
+var testFile = regexp.MustCompile(`(^|/)(test_[^/]*\.py|[^/]*_test\.(py|go)|[^/]*\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs))$`)
+
+// changedTestFiles: test files changed on the branch so far.
+func changedTestFiles(ctx context.Context, wt, base string) []string {
+	out, err := git(ctx, wt, "diff", "--name-only", "--diff-filter=AMR", base+"..HEAD")
+	if err != nil {
+		return nil
+	}
+	var files []string
+	for _, f := range strings.Fields(out) {
+		if testFile.MatchString(f) {
+			files = append(files, f)
+		}
+	}
+	return files
+}
+
+// testTargets: how the project's test command names those files. Django's
+// and unittest's want dotted modules; others take paths.
+func testTargets(command string, files []string) []string {
+	modules := strings.Contains(command, "manage.py test") || strings.Contains(command, "unittest")
+	var out []string
+	for _, f := range files {
+		if modules {
+			if !strings.HasSuffix(f, ".py") {
+				continue
+			}
+			f = strings.ReplaceAll(strings.TrimSuffix(f, ".py"), "/", ".")
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+func tailText(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if len(s) > max {
+		return "…" + s[len(s)-max:]
+	}
+	return s
+}
+
 func errText(err error) string {
 	if err == nil {
 		return ""
@@ -263,14 +327,18 @@ func firstLine(s string, max int) string {
 	return s
 }
 
-func reviewPrompt(t Task) string {
+func reviewPrompt(t Task, testsPassed string) string {
+	ran := ""
+	if testsPassed != "" {
+		ran = " Away already ran `" + testsPassed + "` on this branch and it passed, so judge the tests' quality and coverage rather than whether they run."
+	}
 	return fmt.Sprintf(`You are checking work done unattended by a local model (Qwen) on branch %s of this repository, while its owner is away. The task it was given:
 
 <task>
 %s
 </task>
 
-See the change with `+"`git diff %s...HEAD`"+` and read whatever files you need. You may run the project's tests (for a Django project: `+"`python manage.py test <module>`"+`). Do not edit anything.
+See the change with `+"`git diff %s...HEAD`"+` and read whatever files you need. You may run the project's tests (for a Django project: `+"`python manage.py test <module>`"+`). Do not edit anything.%s
 
 Judge it like a careful reviewer: does it do the whole task, correctly; does it stay in scope (no unrelated changes, no "improvements" nobody asked for); could it break something (look at callers, tests, migrations)?
 
@@ -278,7 +346,7 @@ End your reply with exactly one line of JSON and nothing after it:
 {"verdict": "pass" | "revise" | "fail", "notes": "..."}
 - pass: good to merge as it is. notes: one or two sentences on what it did.
 - revise: notes are concrete, numbered instructions for the model to fix it (file and what to change).
-- fail: the task is impossible, unclear or a bad idea as written. notes explain why, for the owner.`, t.Branch, t.Text, t.BaseCommit)
+- fail: the task is impossible, unclear or a bad idea as written. notes explain why, for the owner.`, t.Branch, t.Text, t.BaseCommit, ran)
 }
 
 func fixPrompt(t Task, notes string) string {

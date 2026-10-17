@@ -317,7 +317,8 @@ func (s *Service) Examples(project string) ([]ExampleSummary, error) {
 		}
 		files, _ := os.ReadDir(filepath.Join(s.set.ExamplesDir, d.Name()))
 		for _, f := range files {
-			if !strings.HasSuffix(f.Name(), ".json") {
+			// .embeddings.json (recall.go's cache) and the like aren't examples.
+			if !strings.HasSuffix(f.Name(), ".json") || strings.HasPrefix(f.Name(), ".") {
 				continue
 			}
 			b, err := os.ReadFile(filepath.Join(s.set.ExamplesDir, d.Name(), f.Name()))

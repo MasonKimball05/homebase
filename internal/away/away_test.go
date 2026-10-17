@@ -35,13 +35,17 @@ func (f fakeProjects) Path(id string) (string, bool) { p, ok := f[id]; return p,
 
 // fakeSteps: the "model" writes a file; the "reviewer" answers from a script.
 type fakeSteps struct {
-	mu      sync.Mutex
-	reviews []string // replies to give, in order
-	fix     string
-	qwen    func(dir, task string) error
-	prompts []string
-	tests   []string
-	block   chan struct{} // if set, Qwen waits here (or for cancel)
+	mu            sync.Mutex
+	reviews       []string // replies to give, in order
+	fix           string
+	qwen          func(dir, task string) error
+	prompts       []string
+	tests         []string
+	claudePrompts []string
+	block         chan struct{} // if set, Qwen waits here (or for cancel)
+	// testRuns: what Tests was asked to run; testFails: how many runs fail first.
+	testRuns  []string
+	testFails int
 }
 
 func (f *fakeSteps) Qwen(ctx context.Context, dir, task, tests, transcript string, log *os.File) error {
@@ -68,9 +72,21 @@ func (f *fakeSteps) Qwen(ctx context.Context, dir, task, tests, transcript strin
 	return os.WriteFile(filepath.Join(dir, "out.txt"), []byte(fmt.Sprintf("attempt %d\n", n)), 0o644)
 }
 
+func (f *fakeSteps) Tests(ctx context.Context, dir, command string, log *os.File) (bool, string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.testRuns = append(f.testRuns, command)
+	if f.testFails > 0 {
+		f.testFails--
+		return false, "FAIL: test_thing\nAssertionError: 1 != 2"
+	}
+	return true, "OK"
+}
+
 func (f *fakeSteps) Claude(ctx context.Context, dir, prompt string, edit bool, log *os.File) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.claudePrompts = append(f.claudePrompts, prompt)
 	if edit {
 		os.WriteFile(filepath.Join(dir, "out.txt"), []byte("fixed by claude\n"), 0o644)
 		return f.fix, nil
@@ -739,5 +755,88 @@ func TestStatsSayHowAnAttemptWent(t *testing.T) {
 	tr := json.RawMessage(`{"items":[{"kind":"tool","name":"run_tests"},{"kind":"tool","name":"read_file"},{"kind":"tool","name":"run_tests"},{"kind":"assistant","text":"ok"}]}`)
 	if st := statsOf(Example{Rounds: []ExampleRound{{Who: "qwen", Seconds: 60, Transcript: tr}}}); st.TestRuns != 2 || st.ToolCalls != 3 || st.Reviewed {
 		t.Fatalf("%+v", st)
+	}
+}
+
+func TestItsOwnFailingTestsGoBackWithoutAReview(t *testing.T) {
+	steps := &fakeSteps{
+		reviews:   []string{`{"verdict":"pass","notes":"Good tests."}`},
+		testFails: 1,
+		qwen: func(dir, task string) error {
+			os.MkdirAll(filepath.Join(dir, "tests", "kai"), 0o755)
+			return os.WriteFile(filepath.Join(dir, "tests", "kai", "test_x.py"), []byte(task[:10]+"\n"), 0o644)
+		},
+	}
+	s, _, _ := setup(t, steps)
+	s.set.Tests = map[string]string{"proj": "python manage.py test --noinput"}
+	s.SetMode(ModeOn)
+	task, _ := s.Add("proj", "write tests for x")
+	got := waitFor(t, s, task.ID, finished)
+
+	// Round 1's tests failed: back to the model with the output, no review spent.
+	if len(steps.claudePrompts) != 1 {
+		t.Fatalf("reviews: %d, want 1 (only after the tests passed)", len(steps.claudePrompts))
+	}
+	if steps.testRuns[0] != "python manage.py test --noinput tests.kai.test_x" {
+		t.Fatalf("ran %q", steps.testRuns[0])
+	}
+	if !strings.Contains(steps.prompts[1], "Your tests fail") || !strings.Contains(steps.prompts[1], "AssertionError: 1 != 2") {
+		t.Fatalf("round 2 prompt: %s", steps.prompts[1])
+	}
+	// The review that did happen knew the tests had passed.
+	if !strings.Contains(steps.claudePrompts[0], "already ran `python manage.py test --noinput tests.kai.test_x`") {
+		t.Fatalf("review prompt: %s", steps.claudePrompts[0])
+	}
+	who := []string{}
+	for _, r := range got.Rounds {
+		who = append(who, r.Who+":"+r.Verdict)
+	}
+	if strings.Join(who, ",") != "qwen:,tests:fail,qwen:,tests:pass,review:pass" || got.Status != StatusDone {
+		t.Fatalf("rounds %v, %+v", who, got)
+	}
+}
+
+func TestFailingTestsInTheLastRoundGoStraightToClaudesFix(t *testing.T) {
+	steps := &fakeSteps{
+		fix:       `{"verdict":"fixed","notes":"Fixed the tests."}`,
+		testFails: 2,
+		qwen: func(dir, task string) error {
+			return os.WriteFile(filepath.Join(dir, "test_a.py"), []byte(fmt.Sprint(len(task))+"\n"), 0o644)
+		},
+	}
+	s, _, _ := setup(t, steps)
+	s.set.Tests = map[string]string{"proj": "npx vitest run"}
+	s.SetMode(ModeOn)
+	task, _ := s.Add("proj", "write tests")
+	got := waitFor(t, s, task.ID, finished)
+	if len(steps.claudePrompts) != 1 || got.Verdict != "fixed" {
+		t.Fatalf("claude calls %d, %+v", len(steps.claudePrompts), got)
+	}
+	if steps.testRuns[0] != "npx vitest run test_a.py" {
+		t.Fatalf("paths, not modules, for a non-Python runner: %q", steps.testRuns[0])
+	}
+}
+
+func TestTestTargets(t *testing.T) {
+	files := []string{"src/tests/kai/test_checks_kai.py", "web/a.test.ts"}
+	if got := testTargets("python manage.py test --noinput", files); strings.Join(got, " ") != "src.tests.kai.test_checks_kai" {
+		t.Fatal(got)
+	}
+	if got := testTargets("npm test --", files); strings.Join(got, " ") != strings.Join(files, " ") {
+		t.Fatal(got)
+	}
+	for f, want := range map[string]bool{"src/tests/test_x.py": true, "x_test.go": true, "a/b.spec.tsx": true, "src/testing.py": false, "contest.py": false, "README.md": false} {
+		if testFile.MatchString(f) != want {
+			t.Errorf("%s: %v", f, !want)
+		}
+	}
+}
+
+func TestEmbeddingsCacheIsNotAnExample(t *testing.T) {
+	s, _, _ := setup(t, &fakeSteps{})
+	os.MkdirAll(filepath.Join(s.set.ExamplesDir, "proj"), 0o755)
+	os.WriteFile(filepath.Join(s.set.ExamplesDir, "proj", ".embeddings.json"), []byte(`{"model":"x","vectors":{}}`), 0o644)
+	if list, _ := s.Examples(""); len(list) != 0 {
+		t.Fatalf("%+v", list)
 	}
 }
