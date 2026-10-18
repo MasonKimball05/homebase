@@ -111,6 +111,7 @@
       "dir": "C:\\Users\\Admin\\AppData\\Local\\Programs\\Ollama",
       "command": "ollama.exe",
       "args": ["serve"],
+      "env": {"OLLAMA_CONTEXT_LENGTH": "65536"},
       "url": "http://arkans-pc1:8090/ai.html",
       "health": "http://127.0.0.1:11434/api/version",
       "log_file": "${LOCALAPPDATA}\\Ollama\\server.log",
