@@ -840,3 +840,41 @@ func TestEmbeddingsCacheIsNotAnExample(t *testing.T) {
 		t.Fatalf("%+v", list)
 	}
 }
+
+func TestEveryThirdTaskIsHeldOutForComparison(t *testing.T) {
+	// The same answer for the same id; about a third of ids.
+	held := 0
+	for i := 0; i < 300; i++ {
+		id := fmt.Sprintf("1018-%06d", i)
+		if heldOut(id, 3) != heldOut(id, 3) {
+			t.Fatal("not stable")
+		}
+		if heldOut(id, 3) {
+			held++
+		}
+	}
+	if held < 70 || held > 130 {
+		t.Fatalf("%d of 300 held out", held)
+	}
+	if heldOut("x", 0) || heldOut("x", -1) {
+		t.Fatal("0 or less means never")
+	}
+	// A held-out task gets no examples, and says so.
+	steps := &fakeSteps{reviews: []string{`{"verdict":"pass","notes":"ok"}`, `{"verdict":"pass","notes":"ok"}`}}
+	s, _, _ := setup(t, steps)
+	calls := 0
+	s.embed = wordEmbedder(&calls)
+	s.set.EmbedModel, s.set.RecallHoldout = "fake", 1 // every task
+	s.SetMode(ModeOn)
+	first, _ := s.Add("proj", "write out.txt")
+	waitFor(t, s, first.ID, finished)
+	s.Act(context.Background(), first.ID, "accept")
+	second, _ := s.Add("proj", "write out.txt")
+	got := waitFor(t, s, second.ID, finished)
+	if !got.HeldOut || len(got.Shown) != 0 || calls != 0 || strings.Contains(steps.prompts[len(steps.prompts)-1], "How similar") {
+		t.Fatalf("%+v (embed calls %d)", got, calls)
+	}
+	if ex := readExample(t, s, second.ID); !ex.HeldOut {
+		t.Fatal("the example doesn't say it was held out")
+	}
+}

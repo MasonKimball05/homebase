@@ -236,6 +236,59 @@ el("add").addEventListener("submit", async (e) => {
   }
 });
 
+// ---------------- suggested tasks ----------------
+
+let suggestFor = "";
+
+async function loadSuggestions() {
+  const project = el("project").value;
+  if (!project || project === suggestFor) return;
+  suggestFor = project;
+  const ul = el("suggest-list");
+  ul.replaceChildren(make("li", "Looking…", "muted"));
+  let list;
+  try {
+    list = await api(`api/away/suggest?project=${encodeURIComponent(project)}`);
+  } catch (e) {
+    ul.replaceChildren(make("li", e.message, "muted"));
+    return;
+  }
+  if (!list.length) {
+    ul.replaceChildren(make("li", "Nothing untested found (Python projects only, for now).", "muted"));
+    return;
+  }
+  ul.replaceChildren(
+    ...list.slice(0, 15).map((sg) => {
+      const li = make("li");
+      li.append(make("span", `${sg.path}: ${sg.function}`, "suggest-name"), make("span", `${sg.lines} lines`, "muted small"));
+      const b = make("button", "Draft a task");
+      b.type = "button";
+      b.addEventListener("click", async () => {
+        b.disabled = true;
+        b.textContent = "Drafting (local model, ~30 s)…";
+        try {
+          const d = await api("api/away/draft", { project, path: sg.path, function: sg.function });
+          el("task").value = d.task;
+          el("task").focus();
+          el("add").scrollIntoView({ behavior: "smooth", block: "center" });
+          showError("");
+          b.textContent = "Drafted";
+        } catch (e) {
+          showError(`Couldn't draft it: ${e.message}`);
+          b.textContent = "Draft a task";
+          b.disabled = false;
+        }
+      });
+      li.append(b);
+      if (sg.doc) li.append(make("span", sg.doc, "suggest-doc muted"));
+      return li;
+    }),
+  );
+}
+
+el("suggest").addEventListener("toggle", () => el("suggest").open && loadSuggestions());
+el("project").addEventListener("change", () => el("suggest").open && loadSuggestions());
+
 // ---------------- track record ----------------
 
 const OUTCOME = { accepted: "accepted", discarded: "discarded", retried: "tried again", removed: "removed", "": "waiting for you" };
@@ -269,7 +322,11 @@ async function loadRecord() {
   }
   if (!Array.isArray(list) || !list.length) return;
   el("record").hidden = false;
-  el("record-summary").replaceChildren(summarize(list.filter((e) => e.shown > 0), "With earlier examples"), summarize(list.filter((e) => !e.shown), "Without"));
+  el("record-summary").replaceChildren(
+    summarize(list.filter((e) => e.shown > 0), "With earlier examples"),
+    summarize(list.filter((e) => e.heldOut), "Held out (none, on purpose)"),
+    summarize(list.filter((e) => !e.shown && !e.heldOut), "Without (none similar enough, or before recall)"),
+  );
   el("record-rows").replaceChildren(
     ...list.map((e) => {
       const tr = make("tr");
@@ -278,7 +335,7 @@ async function loadRecord() {
       tr.append(
         make("td", new Date(e.finished).toLocaleDateString([], { month: "short", day: "numeric" })),
         make("td", `${e.project}: ${e.task.length > 90 ? e.task.slice(0, 89) + "…" : e.task}`, "task"),
-        make("td", String(e.shown)),
+        make("td", e.heldOut ? "held out" : String(e.shown)),
         make("td", duration(e.stats.qwenSeconds)),
         make("td", String(e.stats.testRuns)),
         first,

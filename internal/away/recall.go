@@ -221,6 +221,19 @@ func (s *Service) recall(ctx context.Context, t Task) (prompt string, names []st
 	return b.String(), names
 }
 
+// heldOut: whether this task runs without examples, for comparison. By id,
+// so it's the same answer on every attempt (a retry can't switch sides).
+func heldOut(id string, every int) bool {
+	if every <= 0 {
+		return false
+	}
+	var h uint32 = 2166136261
+	for i := 0; i < len(id); i++ {
+		h = (h ^ uint32(id[i])) * 16777619
+	}
+	return h%uint32(every) == 0
+}
+
 func containsName(list []scored, name string) bool {
 	for _, x := range list {
 		if x.name == name {

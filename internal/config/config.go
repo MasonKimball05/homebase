@@ -68,6 +68,9 @@ type Away struct {
 	// EmbedModel finds similar past tasks to show the local model (Ollama).
 	// Default "nomic-embed-text"; "off" shows none.
 	EmbedModel string `json:"embed_model,omitempty"`
+	// RecallHoldout: every Nth task runs without earlier examples on purpose,
+	// so the Track record can compare fairly. Default 3; -1 never.
+	RecallHoldout int `json:"recall_holdout,omitempty"`
 }
 
 // Projects lists the folders whose git repos the Projects page shows.

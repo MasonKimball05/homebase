@@ -72,7 +72,9 @@ type Task struct {
 	Changed    int     `json:"changed"` // files changed on the branch
 	Pushed     bool    `json:"pushed,omitempty"`
 	// Shown: the examples (recall.go) the local model was shown for this attempt.
-	Shown    []string  `json:"shown,omitempty"`
+	Shown []string `json:"shown,omitempty"`
+	// HeldOut: this attempt ran without examples on purpose (RecallHoldout).
+	HeldOut  bool      `json:"heldOut,omitempty"`
 	Created  time.Time `json:"created"`
 	Started  time.Time `json:"started,omitzero"`
 	Finished time.Time `json:"finished,omitzero"`
@@ -91,8 +93,11 @@ type Settings struct {
 	StatePath   string // the queue, as JSON
 	ExamplesDir string // one file per finished attempt (examples.go); "" = don't keep them
 	EmbedModel  string // for recall.go (Ollama); "" or "off" = don't show examples
-	IdlePath    string // written by `homebase -idle-report`
-	LogDir      string // one log per task
+	// RecallHoldout: every Nth task (by its id) runs without examples on
+	// purpose, so with and without can be compared fairly. 0 = never.
+	RecallHoldout int
+	IdlePath      string // written by `homebase -idle-report`
+	LogDir        string // one log per task
 }
 
 // Projects finds a project's folder by id (internal/projects).
@@ -123,7 +128,8 @@ type Service struct {
 	steps    Steps
 	notify   func(title, body string)
 	logf     func(string, ...any)
-	embed    Embedder // for recall.go; nil = no examples shown
+	embed    Embedder  // for recall.go; nil = no examples shown
+	generate Generator // for suggest.go's drafts; nil = no drafting
 	now      func() time.Time
 
 	mu      sync.Mutex
@@ -147,6 +153,9 @@ func New(set Settings, projects Projects, steps Steps, notify func(title, body s
 	s := &Service{set: set, projects: projects, steps: steps, notify: notify, logf: logf, now: time.Now, wake: make(chan struct{}, 1)}
 	if set.EmbedModel != "" && set.EmbedModel != "off" && set.Ollama != "" {
 		s.embed = OllamaEmbedder(set.Ollama, set.EmbedModel)
+	}
+	if set.Ollama != "" && set.Model != "" {
+		s.generate = OllamaGenerator(set.Ollama, set.Model)
 	}
 	s.st = state{Mode: ModeOff}
 	if b, err := os.ReadFile(set.StatePath); err == nil {

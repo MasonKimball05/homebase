@@ -17,6 +17,8 @@ import (
 //	POST /api/away/tasks/{id}/{action}   cancel, retry, accept, discard, delete
 //	GET  /api/away/tasks/{id}/diff       the branch against where it started (text)
 //	GET  /api/away/tasks/{id}/log        the end of its log (text)
+//	GET  /api/away/suggest?project=      untested functions to give it (suggest.go)
+//	POST /api/away/draft                 {"project", "path", "function"}: a task for one, written with the local model
 //	GET  /api/away/examples[?project=]   every finished attempt, newest first (examples.go)
 //	GET  /api/away/examples/{project}/{file}  one, in full
 func (s *Service) Register(mux *http.ServeMux, allowed func(*http.Request) bool) {
@@ -81,6 +83,31 @@ func (s *Service) Register(mux *http.ServeMux, allowed func(*http.Request) bool)
 		}
 		writeText(w, d)
 	})
+	mux.HandleFunc("GET /api/away/suggest", func(w http.ResponseWriter, r *http.Request) {
+		list, err := s.Suggest(r.URL.Query().Get("project"))
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, list)
+	})
+	mux.HandleFunc("POST /api/away/draft", change(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Project  string `json:"project"`
+			Path     string `json:"path"`
+			Function string `json:"function"`
+		}
+		if err := readJSON(r, &body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
+		d, err := s.DraftTask(r.Context(), body.Project, body.Path, body.Function)
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, d)
+	}))
 	mux.HandleFunc("GET /api/away/examples", func(w http.ResponseWriter, r *http.Request) {
 		list, err := s.Examples(r.URL.Query().Get("project"))
 		if err != nil {

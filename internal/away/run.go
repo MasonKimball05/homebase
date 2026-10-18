@@ -158,9 +158,16 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 
 	// How similar tasks went before (recall.go), shown with the task in every round.
 	stage("looking for similar past tasks")
-	examples, shown := s.recall(ctx, *t)
-	t.Shown = shown
-	s.update(t.ID, func(x *Task) { x.Shown = shown })
+	var examples string
+	var shown []string
+	held := heldOut(t.ID, s.set.RecallHoldout)
+	if !held {
+		examples, shown = s.recall(ctx, *t)
+	} else if log != nil {
+		fmt.Fprintf(log, "---- held out: no earlier examples this time, for comparison\n")
+	}
+	t.Shown, t.HeldOut = shown, held
+	s.update(t.ID, func(x *Task) { x.Shown, x.HeldOut = shown, held })
 	if len(shown) > 0 && log != nil {
 		fmt.Fprintf(log, "---- shown %d earlier example(s): %s\n", len(shown), strings.Join(shown, ", "))
 	}

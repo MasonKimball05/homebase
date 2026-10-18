@@ -49,6 +49,7 @@ type Example struct {
 	Files      []string `json:"files"`
 	// Shown: the earlier examples the local model was shown (recall.go).
 	Shown     []string       `json:"shown,omitempty"`
+	HeldOut   bool           `json:"heldOut,omitempty"` // without examples on purpose, for comparison
 	Rounds    []ExampleRound `json:"rounds"`
 	FinalDiff string         `json:"finalDiff"`
 }
@@ -92,7 +93,7 @@ func (s *Service) saveExample(ctx context.Context, repo string, t Task, rec *rec
 	ex := Example{
 		Version: exampleVersion, ID: t.ID, Project: t.Project, Task: t.Text, Started: t.Started, Finished: t.Finished,
 		Status: t.Status, Verdict: t.Verdict, Notes: t.Notes, Error: t.Error,
-		Base: t.Base, BaseCommit: t.BaseCommit, Branch: t.Branch, Files: []string{}, Rounds: []ExampleRound{}, Shown: t.Shown,
+		Base: t.Base, BaseCommit: t.BaseCommit, Branch: t.Branch, Files: []string{}, Rounds: []ExampleRound{}, Shown: t.Shown, HeldOut: t.HeldOut,
 	}
 	author := "none"
 	for i, r := range t.Rounds {
@@ -244,6 +245,7 @@ type ExampleSummary struct {
 	Finished time.Time `json:"finished"`
 	Files    []string  `json:"files"`
 	Shown    int       `json:"shown"` // earlier examples the model was shown (recall.go)
+	HeldOut  bool      `json:"heldOut,omitempty"`
 	Stats    Stats     `json:"stats"`
 }
 
@@ -329,7 +331,7 @@ func (s *Service) Examples(project string) ([]ExampleSummary, error) {
 			if json.Unmarshal(b, &ex) != nil {
 				continue
 			}
-			out = append(out, ExampleSummary{Name: d.Name() + "/" + f.Name(), ID: ex.ID, Project: ex.Project, Task: ex.Task, Status: ex.Status, Verdict: ex.Verdict, Author: ex.Author, Outcome: ex.Outcome, Finished: ex.Finished, Files: ex.Files, Shown: len(ex.Shown), Stats: statsOf(ex)})
+			out = append(out, ExampleSummary{Name: d.Name() + "/" + f.Name(), ID: ex.ID, Project: ex.Project, Task: ex.Task, Status: ex.Status, Verdict: ex.Verdict, Author: ex.Author, Outcome: ex.Outcome, Finished: ex.Finished, Files: ex.Files, Shown: len(ex.Shown), HeldOut: ex.HeldOut, Stats: statsOf(ex)})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Finished.After(out[j].Finished) })

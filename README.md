@@ -301,6 +301,21 @@ never committed.
 }
 ```
 
+Along the way it learns from its own history (`internal/away`):
+
+- **Examples** (`examples.go`): every finished attempt is kept in
+  `away-examples/` next to the config: each round's transcript and diff,
+  Claude's verdicts, who wrote the result, and whether you accepted it.
+- **Recall** (`recall.go`): a new task is shown up to two similar accepted
+  ones and one reviewer lesson (`embed_model`, default `nomic-embed-text`).
+  Every third task (`recall_holdout`) gets none on purpose, so the **Track
+  record** on the Away page can compare fairly.
+- **Its own tests first**: after each round of the local model, Away runs the
+  test files it touched with the project's `tests` command; a failure goes
+  back to it without spending a Claude review.
+- **Suggested tasks** (`suggest.go`): Python functions no test mentions; the
+  local model drafts the cases to test, for you to check and add.
+
 It runs while the mode is **On**, or in **When idle** mode once nobody has
 touched this PC for `idle_minutes`, and it stops the moment someone does
 (the task goes back to the front of the queue). Homebase runs as a background
