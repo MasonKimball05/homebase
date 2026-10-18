@@ -79,7 +79,8 @@ func TestDraftHandlesBadAnswersAndPaths(t *testing.T) {
 		return `{"test_file": "../../etc/test_x.py", "db": true, "cases": ["it works"]}`, nil
 	}
 	d, err := s.DraftTask(context.Background(), "proj", "src/util.py", "lonely")
-	if err != nil || d.TestFile != "src/tests/security/test_util.py" || !strings.Contains(d.Task, "Django's TestCase.") {
+	// (test_util.py exists, so the fallback gets the function's name too.)
+	if err != nil || d.TestFile != "src/tests/security/test_util_lonely.py" || !strings.Contains(d.Task, "Django's TestCase.") {
 		t.Fatalf("a test file outside the project should fall back to a test folder: %+v %v", d, err)
 	}
 	s.generate = func(ctx context.Context, prompt string) (string, error) { return "not json", nil }
@@ -90,5 +91,16 @@ func TestDraftHandlesBadAnswersAndPaths(t *testing.T) {
 		if _, err := s.DraftTask(context.Background(), "proj", bad[0], bad[1]); err == nil {
 			t.Errorf("drafted %v", bad)
 		}
+	}
+}
+
+func TestDraftNeverPicksAnExistingFile(t *testing.T) {
+	s, _ := suggestRepo(t)
+	s.generate = func(ctx context.Context, prompt string) (string, error) {
+		return `{"test_file": "src/tests/security/test_util.py", "db": false, "cases": ["a", "b", "c", "d", "e", "f", "g", "h"]}`, nil
+	}
+	d, err := s.DraftTask(context.Background(), "proj", "src/util.py", "lonely")
+	if err != nil || d.TestFile != "src/tests/security/test_util_lonely.py" || len(d.Cases) != 6 {
+		t.Fatalf("%+v %v", d, err)
 	}
 }

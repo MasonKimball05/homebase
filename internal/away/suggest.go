@@ -257,8 +257,11 @@ Existing test folders: %s
 
 Answer with JSON only: {"test_file": "...", "db": true|false, "cases": ["...", "..."]}
 - test_file: a new file path in the existing test folder that fits best, named test_<something>.py.
-- db: true if the tests need the database (models, querysets), false if plain objects will do.
-- cases: every distinct behaviour worth one test, one short sentence each, concrete (inputs and the expected result). Cover edge cases the code handles (None, empty, limits, errors). No more than 8.`, function, rel, clipText(src, maxDraftSource), strings.Join(areas, ", "))
+- db: true if the tests need the database (models, querysets, the ORM), false if plain objects will do.
+- cases: what to test, one case per distinct behaviour. Each case is a concrete input and its expected result, in one sentence. For every comparison in the code (<, <=, >=, ==, len, a limit), include the value exactly at the boundary. Include None/empty/missing inputs only where the code handles them. Only behaviour the code really has: never a case for handling it doesn't do (if it would raise, say it raises). No two cases may test the same thing. At most 6.
+
+A good list, for a check that warns when a token is set but shorter than MIN_TOKEN_LENGTH:
+["no token (None) gives no warnings", "an empty token gives no warnings", "a token of MIN_TOKEN_LENGTH - 1 characters gives exactly one warning with id src.W005", "a token of exactly MIN_TOKEN_LENGTH characters gives no warnings"]`, function, rel, clipText(src, maxDraftSource), strings.Join(areas, ", "))
 	gctx, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	defer cancel()
 	raw, err := s.generate(gctx, prompt)
@@ -280,8 +283,12 @@ Answer with JSON only: {"test_file": "...", "db": true|false, "cases": ["...", "
 			testRel = areas[0] + "/test_" + strings.TrimSuffix(filepath.Base(rel), ".py") + ".py"
 		}
 	}
-	if len(ans.Cases) > 8 {
-		ans.Cases = ans.Cases[:8]
+	if len(ans.Cases) > 6 {
+		ans.Cases = ans.Cases[:6]
+	}
+	// "A new file": never one that's already there.
+	if _, err := os.Stat(filepath.Join(repo, filepath.FromSlash(testRel))); err == nil {
+		testRel = strings.TrimSuffix(testRel, ".py") + "_" + strings.ToLower(function) + ".py"
 	}
 	return Draft{Task: draftText(function, rel, testRel, ans.DB, ans.Cases, s.set.Tests[project]), TestFile: testRel, Cases: ans.Cases}, nil
 }
@@ -320,7 +327,10 @@ func draftText(function, rel, testRel string, db bool, cases []string, testComma
 	if targets := testTargets(testCommand, []string{testRel}); len(targets) > 0 {
 		text += fmt.Sprintf(" Run run_tests with the target %s until it passes.", targets[0])
 	}
-	return text + " Use the code's own names for constants, not their values. Tests only: don't change any other file."
+	// The cases come from a model's reading of the code, which can get a
+	// boundary backwards: the code decides, and a disagreement gets said.
+	return text + " If a case's expected result disagrees with what the code actually does, test what the code does and say so in your reply." +
+		" Use the code's own names for constants, not their values. Tests only: don't change any other file."
 }
 
 // testAreas: the folders that hold test files, most-used first (at most 15).
