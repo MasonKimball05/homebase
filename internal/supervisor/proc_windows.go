@@ -60,6 +60,19 @@ func memoryBytes(pid int) (int64, bool) {
 	return kb * 1024, true
 }
 
+// processRunning reports whether a process with this image name (e.g.
+// "ollama app.exe") is running, in any session.
+func processRunning(name string) bool {
+	cmd := exec.Command("tasklist", "/FI", "IMAGENAME eq "+name, "/FO", "CSV", "/NH")
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: createNoWindow}
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	rec, err := csv.NewReader(strings.NewReader(string(out))).Read()
+	return err == nil && len(rec) > 0 && strings.EqualFold(rec[0], name)
+}
+
 // ---- Job Object: tie every app's lifetime to homebase's ----
 //
 // If homebase is killed (Task Scheduler "End", a crash, Task Manager), its

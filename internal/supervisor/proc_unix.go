@@ -44,3 +44,8 @@ func memoryBytes(pid int) (int64, bool) {
 	}
 	return kb * 1024, true
 }
+
+// processRunning reports whether a process with exactly this name exists.
+func processRunning(name string) bool {
+	return exec.Command("pgrep", "-x", name).Run() == nil
+}

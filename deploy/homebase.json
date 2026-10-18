@@ -117,6 +117,7 @@
       "log_skip": ["GET\\s+\"/api/(version|ps|tags)\""],
       "health_interval_sec": 60,
       "external_ok": true,
+      "yield_to": "ollama app.exe",
       "autostart": true
     }
   ]

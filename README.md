@@ -93,6 +93,11 @@ optional keys make that tidy:
 - `"external_ok": true`: running outside homebase is normal for this app, so
   the card is green ("Running (own app)") rather than asking you to stop the
   other copy. If it isn't running at all, homebase starts it as usual.
+- `"yield_to": "ollama app.exe"`: the program that normally runs this app.
+  While it's running, homebase doesn't start its own copy, and it stops its
+  copy when that program starts (Ollama's tray app installs updates as it
+  starts and can't replace `ollama.exe` while homebase's copy holds it). If
+  nothing answers within 3 minutes, homebase starts its copy anyway.
 
 ## Phone alerts
 

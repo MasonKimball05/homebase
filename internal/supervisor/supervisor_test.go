@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -322,6 +323,73 @@ func TestExternalCopyGoneForGoodIsReplaced(t *testing.T) {
 	waitFor(t, "external", stateIs(External), a)
 	ext.Close()
 	waitFor(t, "our own copy after the grace period", func(s Status) bool { return s.PID != 0 }, a)
+}
+
+// launcher fakes cfg.YieldTo (Ollama's tray app) being up or not.
+type launcher struct{ up atomic.Bool }
+
+func (l *launcher) yieldApp(t *testing.T, addr string) *App {
+	a := helperApp(t, "serve", addr, func(c *config.App) { c.YieldTo = "ollama app.exe" })
+	a.timing.yieldEvery = 20 * time.Millisecond
+	a.timing.externalGrace = time.Second
+	a.running = func(name string) bool { return name == "ollama app.exe" && l.up.Load() }
+	return a
+}
+
+// At boot, with the tray app already up, homebase leaves the starting to it;
+// if nothing answers by the end of the grace period, ours starts after all.
+func TestYieldsToTheLauncherAtBoot(t *testing.T) {
+	var l launcher
+	l.up.Store(true)
+	a := l.yieldApp(t, freeAddr(t))
+	run(t, a)
+	time.Sleep(300 * time.Millisecond)
+	if s := a.Status(); s.PID != 0 || !strings.Contains(s.Message, "Waiting for ollama app.exe") {
+		t.Fatalf("started while the launcher was up: %+v", s)
+	}
+	waitFor(t, "our own copy once the grace ran out", func(s Status) bool { return s.PID != 0 }, a)
+	time.Sleep(200 * time.Millisecond) // the launcher was already up: no hand-over
+	if a.Status().PID == 0 {
+		t.Fatal("stopped the copy started after the grace period")
+	}
+}
+
+// The tray app starting while our copy runs (login after a reboot) gets ours
+// out of the way, so its updater can replace ollama.exe.
+func TestHandsOverWhenTheLauncherStarts(t *testing.T) {
+	var l launcher
+	addr := freeAddr(t)
+	a := l.yieldApp(t, addr)
+	run(t, a)
+	waitFor(t, "running", stateIs(Running), a)
+
+	l.up.Store(true)
+	waitFor(t, "stopped for the launcher", func(s Status) bool { return s.PID == 0 }, a)
+	ln, err := net.Listen("tcp", addr) // the launcher's own copy comes up
+	if err != nil {
+		t.Fatal(err)
+	}
+	ext := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})}
+	go ext.Serve(ln)
+	defer ext.Close()
+	waitFor(t, "external", stateIs(External), a)
+	time.Sleep(1300 * time.Millisecond) // past the grace period
+	if s := a.Status(); s.PID != 0 || s.State != External {
+		t.Fatalf("started our own copy anyway: %+v", s)
+	}
+}
+
+func TestStartButtonDoesntYield(t *testing.T) {
+	var l launcher
+	l.up.Store(true)
+	a := l.yieldApp(t, freeAddr(t))
+	a.timing.externalGrace = time.Minute
+	run(t, a)
+	time.Sleep(100 * time.Millisecond)
+	if err := a.Do("start"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "running on request", stateIs(Running), a)
 }
 
 func TestShutdownStopsRunningApps(t *testing.T) {

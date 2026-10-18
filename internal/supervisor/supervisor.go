@@ -79,6 +79,7 @@ const (
 	actRestart
 	actUnhealthy    // health checks keep failing on a running app
 	actExternalGone // the externally-run copy stopped answering
+	actYield        // the app's own launcher (cfg.YieldTo) just started
 )
 
 // Settings that tests shrink so they don't have to wait for real delays.
@@ -92,9 +93,10 @@ type timing struct {
 	// would hold the exe the installer has to replace (that broke an Ollama
 	// update: the installer rolled back and deleted its runtime).
 	externalGrace time.Duration
+	yieldEvery    time.Duration // how often to look for cfg.YieldTo
 }
 
-var defaultTiming = timing{backoffBase: time.Second, backoffMax: time.Minute, stableAfter: time.Minute, externalGrace: 3 * time.Minute}
+var defaultTiming = timing{backoffBase: time.Second, backoffMax: time.Minute, stableAfter: time.Minute, externalGrace: 3 * time.Minute, yieldEvery: 2 * time.Second}
 
 type App struct {
 	cfg    config.App
@@ -103,6 +105,8 @@ type App struct {
 	kick   chan struct{} // wakes the health checker right after a start
 	client *http.Client
 	timing timing
+	// running reports whether a process with this name exists (tests swap it).
+	running func(name string) bool
 
 	mu sync.RWMutex // guards st
 	st Status
@@ -119,8 +123,9 @@ func NewApp(cfg config.App, logDir string) *App {
 			// A redirect (e.g. to a login page) still means the app is up.
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
-		timing: defaultTiming,
-		st:     Status{Name: cfg.Name, Title: cfg.Title, URL: cfg.URL, State: Stopped, Autostart: cfg.Autostart, ExternalOK: cfg.ExternalOK},
+		timing:  defaultTiming,
+		running: processRunning,
+		st:      Status{Name: cfg.Name, Title: cfg.Title, URL: cfg.URL, State: Stopped, Autostart: cfg.Autostart, ExternalOK: cfg.ExternalOK},
 	}
 }
 
@@ -199,6 +204,7 @@ func (a *App) Run(ctx context.Context) {
 		quick     int  // consecutive crashes without running stably
 		timer     *time.Timer
 		timerC    <-chan time.Time // nil (blocks forever) unless a restart is scheduled
+		graceC    <-chan time.Time // set while we wait for another copy to (re)appear
 	)
 
 	cancelTimer := func() {
@@ -209,7 +215,16 @@ func (a *App) Run(ctx context.Context) {
 		a.update(func(s *Status) { s.NextRestartAt = nil })
 	}
 
-	start := func() {
+	wait := func(why string) {
+		if graceC == nil {
+			a.Logs.Sysf("%s; starting our own in %s unless it's running by then", why, a.timing.externalGrace)
+			graceC = time.After(a.timing.externalGrace)
+		}
+	}
+
+	// start runs our copy. Unless forced (a button press, or the grace ran
+	// out), it leaves the job to cfg.YieldTo when that's running.
+	start := func(force bool) {
 		cancelTimer()
 		// Another copy (e.g. from an old startup task) already answering on
 		// the health URL would make ours fail on "port in use". Report it
@@ -223,6 +238,11 @@ func (a *App) Run(ctx context.Context) {
 				a.Logs.Sysf("not starting: something already answers at %s", a.cfg.Health)
 				return
 			}
+		}
+		if !force && a.cfg.YieldTo != "" && a.running(a.cfg.YieldTo) {
+			a.update(func(s *Status) { s.State, s.Message = Stopped, "Waiting for "+a.cfg.YieldTo+" to start it." })
+			wait(a.cfg.YieldTo + " is running and starts its own copy")
+			return
 		}
 
 		cmd, err := a.command()
@@ -295,13 +315,14 @@ func (a *App) Run(ctx context.Context) {
 	hctx, stopHealth := context.WithCancel(ctx)
 	defer stopHealth()
 	go a.healthLoop(hctx)
+	if a.cfg.YieldTo != "" {
+		go a.yieldLoop(hctx)
+	}
 
 	if a.cfg.Autostart {
 		want = true
-		start()
+		start(false)
 	}
-
-	var graceC <-chan time.Time // set while an external copy is gone
 
 	for {
 		// A nil channel blocks forever, so these cases only fire when relevant.
@@ -327,7 +348,8 @@ func (a *App) Run(ctx context.Context) {
 				want = true
 				if proc == nil {
 					quick = 0 // a manual start gets a fresh backoff
-					start()
+					graceC = nil
+					start(true)
 				}
 			case actStop:
 				want, thenStart = false, false
@@ -335,7 +357,7 @@ func (a *App) Run(ctx context.Context) {
 			case actRestart:
 				want = true
 				if proc == nil {
-					start()
+					start(true)
 				} else {
 					thenStart = true
 					stop()
@@ -348,17 +370,23 @@ func (a *App) Run(ctx context.Context) {
 					stop()
 				}
 			case actExternalGone:
-				if want && proc == nil && graceC == nil {
-					a.Logs.Sysf("the external copy stopped answering; starting our own in %s unless it's back by then (it may be updating)", a.timing.externalGrace)
-					graceC = time.After(a.timing.externalGrace)
+				if want && proc == nil {
+					wait("the external copy stopped answering (it may be updating)")
+				}
+			case actYield:
+				if proc != nil && !stopping {
+					a.Logs.Sysf("%s started; stopping our copy so it can run (and update) its own", a.cfg.YieldTo)
+					thenStart = false
+					stop()
+					wait("handed over to " + a.cfg.YieldTo)
 				}
 			}
 
 		case <-graceC:
 			graceC = nil
 			if want && proc == nil && a.Status().State != External {
-				a.Logs.Sysf("the external copy is still gone; starting our own")
-				start()
+				a.Logs.Sysf("nothing else is running it; starting our own")
+				start(true)
 			}
 
 		case r := <-exitedC:
@@ -378,7 +406,7 @@ func (a *App) Run(ctx context.Context) {
 				a.update(func(s *Status) { s.State, s.Message = Stopped, "" })
 				if thenStart {
 					thenStart = false
-					start()
+					start(true)
 				}
 				continue
 			}
@@ -415,9 +443,32 @@ func (a *App) Run(ctx context.Context) {
 		case <-timerC:
 			timer, timerC = nil, nil
 			if want && proc == nil {
-				start()
+				start(true)
 			}
 		}
+	}
+}
+
+// yieldLoop tells Run when cfg.YieldTo starts, so our copy gets out of its
+// way before it tries to update. Only the moment it appears counts: once
+// it's been running a while, a copy of ours (started when the grace ran out)
+// stays.
+func (a *App) yieldLoop(ctx context.Context) {
+	seen := a.running(a.cfg.YieldTo)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(a.timing.yieldEvery):
+		}
+		now := a.running(a.cfg.YieldTo)
+		if now && !seen {
+			select {
+			case a.cmds <- actYield:
+			default:
+			}
+		}
+		seen = now
 	}
 }
 

@@ -177,6 +177,12 @@ type App struct {
 	// runs from its tray app), so show that as healthy rather than as a
 	// duplicate to clean up. Homebase still starts it when it isn't running.
 	ExternalOK bool `json:"external_ok,omitempty"`
+	// YieldTo names a process (e.g. "ollama app.exe") that runs its own copy
+	// of this app. While it runs, homebase doesn't start a copy, and stops its
+	// own when that process appears: Ollama's tray app updates ollama.exe as it
+	// starts, and can't while homebase's copy holds the file (the installer
+	// rolled back and deleted Ollama's runtime, twice).
+	YieldTo string `json:"yield_to,omitempty"`
 
 	Autostart bool `json:"autostart"`
 	// Restart: "on-failure" (default), "always", or "never".
