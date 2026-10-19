@@ -262,7 +262,7 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 
 		stage(fmt.Sprintf("Claude reviewing round %d", round))
 		started = time.Now()
-		reply, err := s.steps.Claude(ctx, wt, reviewPrompt(*t, ran), false, log)
+		reply, err := s.steps.Claude(ctx, wt, reviewPrompt(*t, ran, s.set.Tests[t.Project]), false, log)
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
@@ -284,7 +284,7 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 	default:
 		stage("Claude fixing it")
 		started := time.Now()
-		reply, err := s.steps.Claude(ctx, wt, fixPrompt(*t, notes), true, log)
+		reply, err := s.steps.Claude(ctx, wt, fixPrompt(*t, notes, s.set.Tests[t.Project]), true, log)
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
@@ -292,16 +292,17 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 			return "", fmt.Errorf("Claude Code: %v", err)
 		}
 		v, n := parseVerdict(reply)
+		if v != "fail" {
+			// A fix ends fixed or failed. Without a verdict line parseVerdict
+			// says "revise", which showed on the round as if it went back.
+			v = "fixed"
+		}
 		sha, _, cerr := commitAll(ctx, wt, fmt.Sprintf("Away: %s (Claude's fix)", firstLine(t.Text, 60)), local)
 		if cerr != nil {
 			return "", cerr
 		}
 		t.Rounds = append(t.Rounds, Round{Who: "claude-fix", Verdict: v, Notes: n, Seconds: int(time.Since(started).Seconds()), Commit: sha})
-		if v == "fail" {
-			t.Verdict, t.Notes = "fail", n
-		} else {
-			t.Verdict, t.Notes = "fixed", n
-		}
+		t.Verdict, t.Notes = v, n
 	}
 	if out, err := git(ctx, wt, "diff", "--name-only", t.BaseCommit+"..HEAD"); err == nil {
 		t.Changed = len(strings.Fields(out))
@@ -372,7 +373,15 @@ func firstLine(s string, max int) string {
 	return s
 }
 
-func reviewPrompt(t Task, testsPassed string) string {
+// testHint: how to run the tests, in the project's own words.
+func testHint(command string) string {
+	if command == "" {
+		return "for a Django project: `python manage.py test <module>`"
+	}
+	return "here: `" + command + " <test file or module>`"
+}
+
+func reviewPrompt(t Task, testsPassed, testCommand string) string {
 	ran := ""
 	if testsPassed != "" {
 		ran = " Away already ran `" + testsPassed + "` on this branch and it passed, so judge the tests' quality and coverage rather than whether they run."
@@ -383,7 +392,7 @@ func reviewPrompt(t Task, testsPassed string) string {
 %s
 </task>
 
-See the change with `+"`git diff %s...HEAD`"+` and read whatever files you need. You may run the project's tests (for a Django project: `+"`python manage.py test <module>`"+`). Do not edit anything.%s
+See the change with `+"`git diff %s...HEAD`"+` and read whatever files you need. You may run the project's tests (%s). Do not edit anything.%s
 
 Judge it like a careful reviewer: does it do the whole task, correctly; does it stay in scope (no unrelated changes, no "improvements" nobody asked for); could it break something (look at callers, tests, migrations)?
 
@@ -391,10 +400,10 @@ End your reply with exactly one line of JSON and nothing after it:
 {"verdict": "pass" | "revise" | "fail", "notes": "..."}
 - pass: good to merge as it is. notes: one or two sentences on what it did.
 - revise: notes are concrete, numbered instructions for the model to fix it (file and what to change).
-- fail: the task is impossible, unclear or a bad idea as written. notes explain why, for the owner.`, t.Branch, t.Text, t.BaseCommit, ran)
+- fail: the task is impossible, unclear or a bad idea as written. notes explain why, for the owner.`, t.Branch, t.Text, t.BaseCommit, testHint(testCommand), ran)
 }
 
-func fixPrompt(t Task, notes string) string {
+func fixPrompt(t Task, notes, testCommand string) string {
 	return fmt.Sprintf(`A local model worked on this task unattended on branch %s and its attempts didn't pass review. The task:
 
 <task>
@@ -406,12 +415,12 @@ The last review's notes:
 %s
 </notes>
 
-See what's there with `+"`git diff %s...HEAD`"+`. Finish the task yourself: edit the files so it is done correctly and completely, staying within the task, and run the relevant tests (for a Django project: `+"`python manage.py test <module>`"+`) until they pass. Don't commit, push or switch branches (that's handled for you).
+See what's there with `+"`git diff %s...HEAD`"+`. Finish the task yourself: edit the files so it is done correctly and completely, staying within the task, and run the relevant tests (%s) until they pass. Don't commit, push or switch branches (that's handled for you).
 
 End your reply with exactly one line of JSON and nothing after it:
 {"verdict": "fixed" | "fail", "notes": "..."}
 - fixed: notes summarize the final change for the owner.
-- fail: the task can't be done as written; notes explain why.`, t.Branch, t.Text, notes, t.BaseCommit)
+- fail: the task can't be done as written; notes explain why.`, t.Branch, t.Text, notes, t.BaseCommit, testHint(testCommand))
 }
 
 var verdictLine = regexp.MustCompile(`\{[^{}]*"verdict"[^{}]*\}`)

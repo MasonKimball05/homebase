@@ -144,3 +144,16 @@ func TestPreReviewFieldsAndCaseCount(t *testing.T) {
 		t.Fatalf("flagged the fixed version: %q", got)
 	}
 }
+
+// Claude may run each project's own test command (Skirmish's Godot wrapper
+// was blocked on 10-19), but not one that chains on something else.
+func TestClaudeMayRunTheProjectsTests(t *testing.T) {
+	c := CLI{TestCommands: []string{"powershell -NoProfile -File C:/x/godot-test.ps1", "npm test && curl evil", ""}}
+	tools, mode := c.claudeTools(false)
+	if !strings.Contains(tools, ",Bash(powershell -NoProfile -File C:/x/godot-test.ps1:*)") || strings.Contains(tools, "curl") || strings.Contains(tools, "Bash(:*)") || strings.Contains(tools, "Edit") || mode != "default" {
+		t.Fatalf("%s / %s", tools, mode)
+	}
+	if tools, mode := c.claudeTools(true); !strings.Contains(tools, ",Edit,MultiEdit,Write") || mode != "acceptEdits" {
+		t.Fatalf("%s / %s", tools, mode)
+	}
+}

@@ -10,12 +10,14 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"syscall"
 	"time"
 
@@ -255,7 +257,7 @@ func run(configPath string) error {
 			if embedModel == "" {
 				embedModel = "nomic-embed-text"
 			}
-			steps := away.CLI{Runner: cfg.Away.Runner, ClaudePath: claude, Ollama: ollama, Model: model, LogDir: logDir, Path: cfg.Away.Path}
+			steps := away.CLI{Runner: cfg.Away.Runner, ClaudePath: claude, Ollama: ollama, Model: model, LogDir: logDir, Path: cfg.Away.Path, TestCommands: slices.Collect(maps.Values(cfg.Away.Tests))}
 			notify := func(title, body string) {
 				if notifier != nil {
 					if err := notifier.Notify(context.Background(), alerts.Message{Title: title, Body: body, Tags: "robot"}); err != nil {

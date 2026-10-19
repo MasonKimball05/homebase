@@ -304,7 +304,8 @@ never committed.
     "Parliament-Dev": "python manage.py test --noinput",
     // Godot: scripts/godot-test.ps1 runs the test_*.gd files it's given
     // headless (importing a fresh worktree first, ~15 s)
-    "Skirmish": "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\Users\\Admin\\projects\\homebase\\scripts\\godot-test.ps1"
+    // (forward slashes: Claude Code runs it through Git Bash, which eats backslashes)
+    "Skirmish": "powershell -NoProfile -ExecutionPolicy Bypass -File C:/Users/Admin/projects/homebase/scripts/godot-test.ps1"
   },
   // folders put in front of PATH for Away's runs (where pip put ruff)
   "path": ["C:\\Users\\Admin\\AppData\\Local\\Packages\\…\\Python311\\Scripts"]

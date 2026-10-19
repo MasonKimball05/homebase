@@ -20,6 +20,10 @@ type CLI struct {
 	LogDir                            string
 	// Path: folders put in front of PATH for both steps.
 	Path []string
+	// TestCommands: the projects' own test commands (Settings.Tests), which Claude
+	// may run too, besides the usual ones in testTools: Skirmish's Godot
+	// wrapper was blocked, so Claude's fix couldn't check its own work.
+	TestCommands []string
 }
 
 // env is this process's environment with Path in front of PATH, plus extra.
@@ -141,13 +145,7 @@ func transcriptError(path string) string {
 func (c CLI) Claude(ctx context.Context, dir, prompt string, edit bool, log *os.File) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, claudeTimeout)
 	defer cancel()
-	// Reading, git's read commands, and the usual test commands; nothing else runs.
-	tools := "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*)," + testTools
-	mode := "default"
-	if edit {
-		tools += ",Edit,MultiEdit,Write"
-		mode = "acceptEdits"
-	}
+	tools, mode := c.claudeTools(edit)
 	cmd := exec.CommandContext(ctx, c.ClaudePath, "-p", "--output-format", "json", "--allowedTools", tools, "--permission-mode", mode)
 	cmd.Dir = dir
 	cmd.Env = c.env()
@@ -180,6 +178,24 @@ func (c CLI) Claude(ctx context.Context, dir, prompt string, edit bool, log *os.
 		return "", errors.New(firstLine(res.Result, 300))
 	}
 	return res.Result, nil
+}
+
+// claudeTools: reading, git's read commands, the usual test commands and
+// the projects' own; nothing else runs. Fixing may also edit files.
+func (c CLI) claudeTools(edit bool) (tools, mode string) {
+	tools = "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*)," + testTools
+	for _, t := range c.TestCommands {
+		// A command that chains or redirects would let a prefix match run more than tests.
+		if t = strings.TrimSpace(t); t != "" && !strings.ContainsAny(t, "&|;<>`$") {
+			tools += ",Bash(" + t + ":*)"
+		}
+	}
+	mode = "default"
+	if edit {
+		tools += ",Edit,MultiEdit,Write"
+		mode = "acceptEdits"
+	}
+	return tools, mode
 }
 
 const testTools = "Bash(python manage.py test:*),Bash(python -m pytest:*),Bash(npm test:*),Bash(npx vitest run:*),Bash(go test:*),Bash(cargo test:*)"

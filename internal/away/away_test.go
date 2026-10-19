@@ -183,6 +183,23 @@ func TestPassesReviewAndWaitsForYou(t *testing.T) {
 	}
 }
 
+// 10-19: Claude's fix reply ended without a verdict line, and the round
+// showed "revise" as if the work went back again.
+func TestAFixWithoutAVerdictLineIsFixed(t *testing.T) {
+	steps := &fakeSteps{
+		reviews: []string{`{"verdict": "revise", "notes": "1. split it"}`, `{"verdict": "revise", "notes": "2. split it"}`},
+		fix:     "The tests are finished: 5 tests, all pass.",
+	}
+	s, _, _ := setup(t, steps)
+	task, _ := s.Add("proj", "write out.txt")
+	s.SetMode(ModeOn)
+	got := waitFor(t, s, task.ID, finished)
+	last := got.Rounds[len(got.Rounds)-1]
+	if last.Who != "claude-fix" || last.Verdict != "fixed" || got.Verdict != "fixed" || got.Status != StatusDone {
+		t.Fatalf("%+v / %+v", last, got)
+	}
+}
+
 func TestRevisesThenClaudeFixes(t *testing.T) {
 	steps := &fakeSteps{
 		reviews: []string{`{"verdict": "revise", "notes": "1. say hello"}`, `{"verdict": "revise", "notes": "2. still wrong"}`},
