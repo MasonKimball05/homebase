@@ -21,7 +21,10 @@
     "idle_minutes": 20,
     "rounds": 2,
     "push": ["Parliament-Dev"],
-    "tests": { "Parliament-Dev": "python manage.py test --noinput" },
+    "tests": {
+      "Parliament-Dev": "python manage.py test --noinput",
+      "Skirmish": "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\Users\\Admin\\projects\\homebase\\scripts\\godot-test.ps1"
+    },
     "path": ["C:\\Users\\Admin\\AppData\\Local\\Packages\\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\\LocalCache\\local-packages\\Python311\\Scripts"]
   },
   "apps": [

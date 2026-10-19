@@ -851,7 +851,12 @@ func TestTestTargets(t *testing.T) {
 	if got := testTargets("npm test --", files); strings.Join(got, " ") != strings.Join(files, " ") {
 		t.Fatal(got)
 	}
-	for f, want := range map[string]bool{"src/tests/test_x.py": true, "x_test.go": true, "a/b.spec.tsx": true, "src/testing.py": false, "contest.py": false, "README.md": false} {
+	// Skirmish (Godot): paths, which scripts/godot-test.ps1 turns into res:// ones.
+	if got := testTargets(`powershell -File C:\x\godot-test.ps1`, []string{"game/tests/test_wallet.gd"}); strings.Join(got, " ") != "game/tests/test_wallet.gd" {
+		t.Fatal(got)
+	}
+	for f, want := range map[string]bool{"src/tests/test_x.py": true, "x_test.go": true, "a/b.spec.tsx": true, "game/tests/test_wallet.gd": true,
+		"game/tests/_probe_hud.gd": false, "src/testing.py": false, "contest.py": false, "README.md": false} {
 		if testFile.MatchString(f) != want {
 			t.Errorf("%s: %v", f, !want)
 		}

@@ -300,7 +300,12 @@ never committed.
   "push": ["Parliament-Dev"],
   // the local model's run_tests command per project; it adds the module it
   // wants (Loom picks npm test, pytest… itself, but not Django's)
-  "tests": { "Parliament-Dev": "python manage.py test --noinput" },
+  "tests": {
+    "Parliament-Dev": "python manage.py test --noinput",
+    // Godot: scripts/godot-test.ps1 runs the test_*.gd files it's given
+    // headless (importing a fresh worktree first, ~15 s)
+    "Skirmish": "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\Users\\Admin\\projects\\homebase\\scripts\\godot-test.ps1"
+  },
   // folders put in front of PATH for Away's runs (where pip put ruff)
   "path": ["C:\\Users\\Admin\\AppData\\Local\\Packages\\…\\Python311\\Scripts"]
 }

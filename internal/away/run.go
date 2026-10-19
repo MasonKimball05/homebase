@@ -312,7 +312,7 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 	return StatusDone, nil
 }
 
-var testFile = regexp.MustCompile(`(^|/)(test_[^/]*\.py|[^/]*_test\.(py|go)|[^/]*\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs))$`)
+var testFile = regexp.MustCompile(`(^|/)(test_[^/]*\.(py|gd)|[^/]*_test\.(py|go)|[^/]*\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs))$`)
 
 // changedTestFiles: test files changed on the branch so far.
 func changedTestFiles(ctx context.Context, wt, base string) []string {
