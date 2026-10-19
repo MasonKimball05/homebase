@@ -318,6 +318,18 @@ Along the way it learns from its own history (`internal/away`):
 - **Its own tests first**: after each round of the local model, Away runs the
   test files it touched with the project's `tests` command; a failure goes
   back to it without spending a Claude review.
+- **A quick check before review** (`check.go`): once its tests pass, Away
+  looks at the diff for code names the task mentions but the diff never uses
+  (`RequestFactory`; an import alone doesn't count), for constants from the
+  file under test typed out as values (`900` for `LOCKOUT_DURATION`), and for
+  a test count that doesn't match the cases a task lists "one test each".
+  Findings go back to it once, without using up a round. On the 10-18 and
+  10-19 batches it would have caught four of Claude's send-backs, and it
+  flags none of the accepted versions.
+- **A broken model stops Away**: if the local model can't run, or answers
+  without calling a single tool (it never saw the task: on 10-18 Ollama ran
+  with a 4,096-token context), the task goes back in the queue and Away
+  switches itself off, says why on the Away page, and notifies you once.
 - **Suggested tasks** (`suggest.go`): Python functions no test mentions; the
   local model drafts the cases to test, for you to check and add.
 

@@ -28,6 +28,11 @@ func (s *Service) runTask(ctx context.Context, id string) {
 
 	rec := newRecording()
 	outcome, err := s.work(ctx, &task, log, rec)
+	// The local model being broken isn't this task's fault: it goes back in
+	// the queue and Away switches itself off, rather than failing every
+	// task after it the same way (or spending Claude on empty attempts).
+	var down *modelDown
+	isDown := errors.As(err, &down)
 	// A failure before anything was committed leaves no branch behind.
 	if err != nil && ctx.Err() == nil && task.Branch != "" && task.BaseCommit != "" {
 		if repo, ok := s.projects.Path(task.Project); ok {
@@ -42,7 +47,7 @@ func (s *Service) runTask(ctx context.Context, id string) {
 	// while its old branch is still there (same name).
 	interrupted := ctx.Err() != nil
 	repo, _ := s.projects.Path(task.Project)
-	if interrupted {
+	if interrupted || isDown {
 		// Leave nothing behind: the next attempt makes a fresh branch.
 		dropBranch(context.Background(), repo, s.worktree(task), task.Branch)
 	} else {
@@ -66,6 +71,10 @@ func (s *Service) runTask(ctx context.Context, id string) {
 	t := s.find(id)
 	if t != nil {
 		switch {
+		case isDown && !interrupted:
+			t.Status, t.Stage, t.Error = StatusQueued, "", ""
+			t.Branch, t.Base, t.BaseCommit, t.Rounds, t.Changed, t.Shown = "", "", "", []Round{}, 0, nil
+			s.st.Mode, s.st.Stopped = ModeOff, down.Error()
 		case interrupted && !stopped:
 			// Paused (you came back, or switched it off): start over later, same place in the queue.
 			t.Status, t.Stage = StatusQueued, ""
@@ -84,6 +93,13 @@ func (s *Service) runTask(ctx context.Context, id string) {
 	s.saveLocked()
 	s.mu.Unlock()
 
+	if isDown && !interrupted {
+		if log != nil {
+			fmt.Fprintf(log, "---- %s: back in the queue, and Away is off until it's fixed\n", down.Error())
+		}
+		s.notify("Away: switched off", fmt.Sprintf("%s\n%s is back in the queue. Fix it, then switch Away back on.", down.Error(), firstLine(task.Text, 80)))
+		return
+	}
 	if interrupted {
 		if log != nil {
 			fmt.Fprintf(log, "---- stopped (%s)\n", map[bool]string{true: "cancelled", false: "paused: back at the PC, or Away switched off"}[stopped])
@@ -109,6 +125,11 @@ func (s *Service) runTask(ctx context.Context, id string) {
 	}
 	s.poke()
 }
+
+// modelDown: the local model (or its runner) can't be used, so nothing can be.
+type modelDown struct{ msg string }
+
+func (e *modelDown) Error() string { return "the local model couldn't run: " + e.msg }
 
 func notice(t Task) (string, string) {
 	short := firstLine(t.Text, 80)
@@ -174,14 +195,17 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 
 	notes := ""
 	verdict := ""
+	attempt := 0     // Qwen runs so far: the rounds, plus one if the check sent it back
+	checked := false // the pre-review check sends work back at most once
 	for round := 1; round <= s.set.Rounds; round++ {
+		attempt++
 		stage(fmt.Sprintf("local model, round %d of %d", round, s.set.Rounds))
 		started := time.Now()
 		prompt := t.Text + examples
 		if notes != "" {
-			prompt += "\n\nYour previous attempt is already committed on this branch. A reviewer looked at it and asked for these changes; make them:\n\n" + notes
+			prompt += "\n\nYour previous attempt is already committed on this branch. It was sent back with these notes; act on them:\n\n" + notes
 		}
-		transcript := filepath.Join(s.set.LogDir, fmt.Sprintf("%s.round%d.qwen.json", t.ID, round))
+		transcript := filepath.Join(s.set.LogDir, fmt.Sprintf("%s.round%d.qwen.json", t.ID, attempt))
 		rec.transcripts[len(t.Rounds)] = transcript // the qwen round about to be added
 		qerr := s.steps.Qwen(ctx, wt, prompt, s.set.Tests[t.Project], transcript, log)
 		if ctx.Err() != nil {
@@ -189,14 +213,14 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 		}
 		var me *ModelError
 		if errors.As(qerr, &me) {
-			return "", fmt.Errorf("the local model couldn't run: %s", me.Msg)
+			return "", &modelDown{me.Msg}
 		}
-		sha, n, cerr := commitAll(ctx, wt, fmt.Sprintf("Away: %s (local model, round %d)", firstLine(t.Text, 60), round), local)
+		sha, n, cerr := commitAll(ctx, wt, fmt.Sprintf("Away: %s (local model, round %d)", firstLine(t.Text, 60), attempt), local)
 		if cerr != nil {
 			return "", cerr
 		}
-		if qerr != nil && n == 0 && round == 1 {
-			return "", fmt.Errorf("the local model didn't run: %v", qerr)
+		if qerr != nil && n == 0 && attempt == 1 {
+			return "", &modelDown{"it didn't run: " + qerr.Error()}
 		}
 		t.Rounds = append(t.Rounds, Round{Who: "qwen", Seconds: int(time.Since(started).Seconds()), Commit: sha, Notes: errText(qerr)})
 
@@ -219,6 +243,20 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 				}
 				t.Rounds = append(t.Rounds, Round{Who: "tests", Verdict: "pass", Seconds: int(time.Since(started).Seconds())})
 				ran = line
+			}
+		}
+
+		// A quick look for what the task named and the code's constants
+		// (check.go), before spending a review. It doesn't use up a round.
+		if !checked {
+			if diff, err := git(ctx, wt, "diff", t.BaseCommit+"..HEAD"); err == nil {
+				if found := preReview(t.Text, diff, wt); found != "" {
+					checked = true
+					t.Rounds = append(t.Rounds, Round{Who: "check", Verdict: "revise", Notes: found})
+					verdict, notes = "revise", found
+					round--
+					continue
+				}
 			}
 		}
 

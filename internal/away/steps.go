@@ -73,7 +73,39 @@ func (c CLI) Qwen(ctx context.Context, dir, task, tests, transcript string, log 
 	if msg := transcriptError(transcript); msg != "" {
 		return &ModelError{msg}
 	}
+	// No tool call at all means it never got to work on the task: on 10-18
+	// Ollama ran with a 4,096-token context, cut the prompt to its last few
+	// lines, and Qwen answered those in prose, five tasks in a row.
+	if tools, input := transcriptTools(transcript); tools == 0 {
+		return &ModelError{fmt.Sprintf("it answered without using a single tool (its prompt was %d tokens), so it probably never saw the task: check the model, and Ollama's context length", input)}
+	}
 	return nil
+}
+
+// transcriptTools: how many tools the model called, and its prompt's size
+// in tokens; -1 calls when the transcript can't be read.
+func transcriptTools(path string) (calls, input int) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return -1, 0
+	}
+	var t struct {
+		Usage struct {
+			Input int `json:"input"`
+		} `json:"usage"`
+		Items []struct {
+			Kind string `json:"kind"`
+		} `json:"items"`
+	}
+	if json.Unmarshal(b, &t) != nil || len(t.Items) == 0 {
+		return -1, 0
+	}
+	for _, it := range t.Items {
+		if it.Kind == "tool" {
+			calls++
+		}
+	}
+	return calls, t.Usage.Input
 }
 
 // ModelError: the local model couldn't be used at all (the task stops there,

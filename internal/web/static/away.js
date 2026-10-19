@@ -37,7 +37,7 @@ const STATUS = {
   queued: "queued", running: "working", done: "ready to review", "needs-you": "needs you",
   failed: "failed", accepted: "merged", discarded: "discarded", cancelled: "cancelled",
 };
-const WHO = { qwen: "Local model", review: "Claude reviewed", "claude-fix": "Claude fixed it" };
+const WHO = { qwen: "Local model", tests: "Its tests", check: "Quick check", review: "Claude reviewed", "claude-fix": "Claude fixed it" };
 
 // ---------------- mode ----------------
 
@@ -45,7 +45,8 @@ function renderMode(v) {
   for (const b of document.querySelectorAll("[data-mode]")) b.setAttribute("aria-checked", String(b.dataset.mode === v.mode));
   const idle = v.idleSeconds === null ? null : duration(v.idleSeconds);
   el("mode-note").textContent =
-    v.mode === "off" ? "Paused. Tasks wait in the queue."
+    v.stopped ? `Switched itself off: ${v.stopped}. Tasks wait in the queue; fix it, then switch Away back on.`
+    : v.mode === "off" ? "Paused. Tasks wait in the queue."
     : v.mode === "on" ? "Working through the queue now, even if someone is at the PC."
     : idle === null ? `Waiting for the PC to be idle ${v.idleMinutes} min, but the idle reporter isn't running there (homebase -idle-report), so it won't start.`
     : `Starts after ${v.idleMinutes} min without keyboard or mouse input, and stops when someone's back. Idle for ${idle}.`;

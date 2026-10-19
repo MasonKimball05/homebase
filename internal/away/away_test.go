@@ -433,20 +433,60 @@ func TestARestartBeforeAnyCommitStartsOver(t *testing.T) {
 	}
 }
 
-func TestAFailureLeavesNoEmptyBranch(t *testing.T) {
-	steps := &fakeSteps{qwen: func(dir, task string) error { return fmt.Errorf("ollama is down") }}
-	s, repo, _ := setup(t, steps)
-	task, _ := s.Add("proj", "anything")
-	s.SetMode(ModeOn)
-	got := waitFor(t, s, task.ID, finished)
-	if got.Status != StatusFailed || !strings.Contains(got.Error, "ollama is down") || got.Branch != "" {
-		t.Fatalf("%+v", got)
-	}
-	if strings.Contains(run(t, repo, "branch"), "away/") {
-		t.Fatal("an empty branch was left behind")
-	}
-	if list, _ := s.Examples(""); len(list) != 0 {
-		t.Fatalf("the model never ran, so there's nothing to keep: %+v", list)
+// A broken model isn't the task's fault: the task goes back in the queue,
+// Away switches itself off (once, with the reason), and nothing is left
+// behind or kept as an example.
+func TestABrokenModelSwitchesAwayOff(t *testing.T) {
+	for name, err := range map[string]error{
+		"model error":   &ModelError{"Ollama: HTTP 500 llama-server binary not found"},
+		"runner exited": fmt.Errorf("ollama is down"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			steps := &fakeSteps{qwen: func(dir, task string) error { return err }}
+			s, repo, _ := setup(t, steps)
+			var mu sync.Mutex
+			var notes []string
+			s.notify = func(title, body string) { mu.Lock(); notes = append(notes, title+": "+body); mu.Unlock() }
+			first, _ := s.Add("proj", "first")
+			second, _ := s.Add("proj", "second")
+			s.SetMode(ModeOn)
+			deadline := time.Now().Add(20 * time.Second)
+			for s.View().Mode != ModeOff && time.Now().Before(deadline) {
+				s.step(context.Background())
+				time.Sleep(20 * time.Millisecond)
+			}
+			for range 5 { // a second task would (wrongly) start here
+				s.step(context.Background())
+				time.Sleep(20 * time.Millisecond)
+			}
+			v := s.View()
+			if v.Mode != ModeOff || !strings.Contains(v.Stopped, "the local model couldn't run") {
+				t.Fatalf("Away didn't switch itself off: %q %q", v.Mode, v.Stopped)
+			}
+			for _, x := range v.Tasks {
+				if (x.ID == first.ID || x.ID == second.ID) && (x.Status != StatusQueued || x.Branch != "" || len(x.Rounds) != 0) {
+					t.Fatalf("%+v", x)
+				}
+			}
+			if len(steps.prompts) != 1 {
+				t.Fatalf("kept going after the model failed: %d runs", len(steps.prompts))
+			}
+			mu.Lock()
+			if len(notes) != 1 || !strings.Contains(notes[0], "switched off") {
+				t.Fatalf("notifications: %q", notes)
+			}
+			mu.Unlock()
+			if strings.Contains(run(t, repo, "branch"), "away/") {
+				t.Fatal("an empty branch was left behind")
+			}
+			if list, _ := s.Examples(""); len(list) != 0 {
+				t.Fatalf("the model never ran, so there's nothing to keep: %+v", list)
+			}
+			s.SetMode(ModeOn) // you fixed it and switched it back on
+			if s.View().Stopped != "" {
+				t.Fatal("the reason outlived switching it back on")
+			}
+		})
 	}
 }
 
@@ -461,20 +501,6 @@ func TestPathGoesFirst(t *testing.T) {
 	}
 	if path != "PATH=/opt/tools"+string(os.PathListSeparator)+"/usr/bin" || env[len(env)-1] != "X=1" {
 		t.Fatalf("%q", path)
-	}
-}
-
-func TestAModelErrorStopsTheTask(t *testing.T) {
-	steps := &fakeSteps{qwen: func(dir, task string) error { return &ModelError{"Ollama: HTTP 500 llama-server binary not found"} }}
-	s, _, _ := setup(t, steps)
-	task, _ := s.Add("proj", "anything")
-	s.SetMode(ModeOn)
-	got := waitFor(t, s, task.ID, finished)
-	if got.Status != StatusFailed || !strings.Contains(got.Error, "llama-server binary not found") {
-		t.Fatalf("%+v", got)
-	}
-	if len(steps.prompts) != 1 {
-		t.Fatalf("kept going after the model failed: %d rounds", len(steps.prompts))
 	}
 }
 

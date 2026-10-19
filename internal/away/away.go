@@ -118,8 +118,11 @@ type Steps interface {
 }
 
 type state struct {
-	Mode  string  `json:"mode"`
-	Tasks []*Task `json:"tasks"`
+	Mode string `json:"mode"`
+	// Stopped: why Away switched itself off (the local model broke), until
+	// someone sets the mode again.
+	Stopped string  `json:"stopped,omitempty"`
+	Tasks   []*Task `json:"tasks"`
 }
 
 type Service struct {
@@ -284,13 +287,14 @@ type View struct {
 	IdleMinutes int     `json:"idleMinutes"`
 	IdleSeconds *int    `json:"idleSeconds"` // null: the idle reporter isn't running
 	Running     string  `json:"running,omitempty"`
+	Stopped     string  `json:"stopped,omitempty"` // why Away switched itself off
 	Tasks       []*Task `json:"tasks"`
 }
 
 func (s *Service) View() View {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	v := View{Mode: s.st.Mode, IdleMinutes: s.set.IdleMinutes, Running: s.running}
+	v := View{Mode: s.st.Mode, IdleMinutes: s.set.IdleMinutes, Running: s.running, Stopped: s.st.Stopped}
 	if d, ok := s.idleFor(); ok {
 		n := int(d.Seconds())
 		v.IdleSeconds = &n
@@ -309,7 +313,7 @@ func (s *Service) SetMode(mode string) error {
 		return errors.New("mode is off, on or idle")
 	}
 	s.mu.Lock()
-	s.st.Mode = mode
+	s.st.Mode, s.st.Stopped = mode, ""
 	s.saveLocked()
 	s.mu.Unlock()
 	s.poke()
