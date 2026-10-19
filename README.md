@@ -328,13 +328,16 @@ task and can't see the keyboard and mouse, so "when idle" needs a small
 reporter running at logon, in your session:
 
 ```powershell
-$a = New-ScheduledTaskAction -Execute "C:\Users\Admin\apps\homebase\homebase.exe" -Argument '-idle-report -config "C:\Users\Admin\apps\homebase\homebase.json"'
+$a = New-ScheduledTaskAction -Execute "conhost.exe" -Argument '--headless "C:\Users\Admin\apps\homebase\homebase.exe" -idle-report -config "C:\Users\Admin\apps\homebase\homebase.json"'
 Register-ScheduledTask -TaskName "homebase-idle" -Action $a -Trigger (New-ScheduledTaskTrigger -AtLogOn -User Admin) -Settings (New-ScheduledTaskSettingsSet -ExecutionTimeLimit 0 -AllowStartIfOnBatteries) -Force
 Start-ScheduledTask homebase-idle
 ```
 
-A console window may flash at logon; the reporter lets go of it straight
-away, so closing it (or it closing) doesn't stop the reporter.
+`conhost --headless` starts it with no window. (Without it a console window
+opens at logon, and closing that window used to stop the reporter; it now
+lets go of the window straight away either way.) The task shows "Ready"
+rather than "Running" once the reporter is up, because the headless console
+exits; `update.ps1` stops the reporter process itself before swapping the exe.
 
 `scripts/update.ps1` stops and restarts that task around the swap, since
 Windows won't replace an exe that's running.

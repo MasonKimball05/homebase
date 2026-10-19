@@ -83,6 +83,11 @@ if ($App -eq 'homebase') {
     # Windows won't let the file be replaced.
     $idle = Get-ScheduledTask -TaskName 'homebase-idle' -ErrorAction SilentlyContinue
     if ($idle) { Stop-ScheduledTask -TaskName 'homebase-idle' }
+    # The task starts it through a headless console that exits once the
+    # reporter detaches, so stopping the task doesn't reach the reporter itself.
+    Get-CimInstance Win32_Process -Filter "Name = 'homebase.exe'" |
+        Where-Object { $_.CommandLine -like '*-idle-report*' } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
     Start-Sleep -Seconds 2
     $exe = Join-Path $HomebaseDir 'homebase.exe'
     Copy-Item $exe "$exe.previous" -Force          # one-step rollback
