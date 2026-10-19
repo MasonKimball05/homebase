@@ -333,6 +333,9 @@ Register-ScheduledTask -TaskName "homebase-idle" -Action $a -Trigger (New-Schedu
 Start-ScheduledTask homebase-idle
 ```
 
+A console window may flash at logon; the reporter lets go of it straight
+away, so closing it (or it closing) doesn't stop the reporter.
+
 `scripts/update.ps1` stops and restarts that task around the swap, since
 Windows won't replace an exe that's running.
 

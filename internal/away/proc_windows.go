@@ -47,7 +47,14 @@ var (
 	kernel32        = syscall.NewLazyDLL("kernel32.dll")
 	procLastInput   = user32.NewProc("GetLastInputInfo")
 	procTickCount64 = kernel32.NewProc("GetTickCount64")
+	procFreeConsole = kernel32.NewProc("FreeConsole")
 )
+
+// DetachConsole lets go of the console window Windows opens for the idle
+// reporter at logon. Closing that window killed the reporter (twice, 10-18
+// and 10-19), and with it "when idle" mode; without a console there's
+// nothing to close.
+func DetachConsole() { procFreeConsole.Call() }
 
 type lastInputInfo struct {
 	size uint32

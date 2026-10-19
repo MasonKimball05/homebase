@@ -297,15 +297,17 @@ func run(configPath string) error {
 // how long they've been untouched for internal/away's "when idle" mode.
 func reportIdle(configPath string) {
 	path := filepath.Join(filepath.Dir(configPath), "away-idle.json")
+	if _, ok := away.IdleSeconds(); !ok {
+		fmt.Fprintln(os.Stderr, "homebase: can't read the idle time here (Windows only)")
+		return
+	}
+	away.DetachConsole()
 	for {
 		if idle, ok := away.IdleSeconds(); ok {
 			now := time.Now().Unix()
 			b, _ := json.Marshal(away.IdleReport{LastInput: now - idle, Written: now})
 			_ = os.WriteFile(path+".tmp", b, 0o644)
 			_ = os.Rename(path+".tmp", path)
-		} else {
-			fmt.Fprintln(os.Stderr, "homebase: can't read the idle time here (Windows only)")
-			return
 		}
 		time.Sleep(20 * time.Second)
 	}

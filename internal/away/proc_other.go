@@ -24,5 +24,8 @@ func unlinkDir(p string) {
 	}
 }
 
+// DetachConsole is only needed on Windows.
+func DetachConsole() {}
+
 // IdleSeconds isn't available here (the idle reporter is for Windows).
 func IdleSeconds() (int64, bool) { return 0, false }
