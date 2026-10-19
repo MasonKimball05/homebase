@@ -22,6 +22,10 @@
 .add-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 4px; }
 
 /* minmax(0, 1fr): an open diff's long lines scroll inside it instead of widening the whole card. */
+.task-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
+.task-filter select { font: inherit; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.mode-buttons .count { margin-left: 6px; font-size: 12px; font-weight: 700; opacity: .75; }
+.mode-buttons button[data-show="you"] .count:not(:empty) { opacity: 1; }
 .tasks { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .task { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
 .task-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
@@ -75,6 +79,7 @@
 @media (max-width: 600px) {
   .mode-buttons { display: flex; }
   .mode-buttons button { flex: 1; padding: 10px 8px; }
+  .task-filter .mode-buttons, .task-filter select { flex: 1 1 100%; }
   .task-when { margin-left: 0; width: 100%; }
   .task summary, .suggest summary { padding: 6px 0; }
   .add-row select { flex: 1; min-width: 0; }

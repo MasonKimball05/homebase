@@ -49,6 +49,15 @@
       <ul class="suggest-list" id="suggest-list"></ul>
     </details>
 
+    <div class="task-filter" id="task-filter" hidden>
+      <div class="mode-buttons" role="radiogroup" aria-label="Show tasks">
+        <button type="button" role="radio" data-show="you">Needs you</button>
+        <button type="button" role="radio" data-show="active">In progress</button>
+        <button type="button" role="radio" data-show="finished">Finished</button>
+        <button type="button" role="radio" data-show="all">All</button>
+      </div>
+      <select id="task-project" aria-label="Project"><option value="">All projects</option></select>
+    </div>
     <ul class="tasks" id="tasks"></ul>
     <p class="muted" id="empty" hidden>Nothing queued. Add a task above.</p>
 

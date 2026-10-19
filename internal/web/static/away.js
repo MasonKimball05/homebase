@@ -193,24 +193,106 @@ function renderTask(t) {
   return li;
 }
 
+// ---------------- which tasks, in what order ----------------
+
+// "you": waiting for your Accept or Discard (or your look, for a failure that
+// left a branch); "active": queued or working; "finished": nothing left to do.
+function group(t) {
+  if (t.status === "done" || t.status === "needs-you" || (t.status === "failed" && t.branch)) return "you";
+  if (t.status === "running" || t.status === "queued") return "active";
+  return "finished";
+}
+const ORDER = { you: 0, active: 1, finished: 2 };
+
+// Waiting for you first, then what's in progress (the running one, then the
+// queue in the order it'll run), then the rest, newest first.
+function arrange(tasks) {
+  const rank = (t) => (t.status === "running" ? -1 : 0);
+  return [...tasks].sort((a, b) => {
+    const ga = group(a), gb = group(b);
+    if (ga !== gb) return ORDER[ga] - ORDER[gb];
+    if (ga === "active") return rank(a) - rank(b) || Date.parse(a.created) - Date.parse(b.created);
+    return Date.parse(b.created) - Date.parse(a.created);
+  });
+}
+
+// The filter is per device (your phone and the desktop can differ); a
+// blocked or empty storage just means the defaults.
+const view = { show: "all", project: "" };
+try {
+  Object.assign(view, JSON.parse(localStorage.getItem("away-view") || "{}"));
+} catch {}
+function saveView() {
+  try {
+    localStorage.setItem("away-view", JSON.stringify(view));
+  } catch {}
+}
+
+const EMPTY = {
+  you: "Nothing is waiting for you.",
+  active: "Nothing queued or working. Add a task above.",
+  finished: "Nothing finished yet.",
+  all: "Nothing queued. Add a task above.",
+};
+
+function renderFilter(tasks) {
+  const box = el("task-filter");
+  box.hidden = tasks.length === 0;
+  const projects = [...new Set(tasks.map((t) => t.project))].sort();
+  const sel = el("task-project");
+  if (view.project && !projects.includes(view.project)) view.project = "";
+  const want = ["", ...projects].join("\n");
+  if ([...sel.options].map((o) => o.value).join("\n") !== want) {
+    sel.replaceChildren(make("option", "All projects"), ...projects.map((p) => make("option", p)));
+    sel.options[0].value = "";
+  }
+  sel.value = view.project;
+  const inProject = tasks.filter((t) => !view.project || t.project === view.project);
+  for (const b of box.querySelectorAll("[data-show]")) {
+    const n = b.dataset.show === "all" ? inProject.length : inProject.filter((t) => group(t) === b.dataset.show).length;
+    let count = b.querySelector(".count");
+    if (!count) b.append((count = make("span", "", "count")));
+    count.textContent = n ? String(n) : "";
+    b.setAttribute("aria-checked", String(b.dataset.show === view.show));
+  }
+  return arrange(inProject.filter((t) => view.show === "all" || group(t) === view.show));
+}
+
 let lastTasks = "";
+let lastView = null; // the last answer from the API, to redraw from when the filter changes
 
 function render(v) {
   renderMode(v);
+  lastView = v;
+  const shown = renderFilter(v.tasks);
   const ul = el("tasks");
-  const key = JSON.stringify(v.tasks);
+  const key = JSON.stringify([view, shown]);
   if (key === lastTasks) {
     // Nothing new: keep the page (open diffs, their scroll, yours) as it is, and just age the times.
-    for (const t of v.tasks) {
+    for (const t of shown) {
       const span = ul.querySelector(`[data-id="${CSS.escape(t.id)}"] .task-when`);
       if (span) span.textContent = when(t);
     }
     return;
   }
   lastTasks = key;
-  ul.replaceChildren(...v.tasks.map(renderTask));
-  el("empty").hidden = v.tasks.length > 0;
+  ul.replaceChildren(...shown.map(renderTask));
+  el("empty").textContent = EMPTY[view.show];
+  el("empty").hidden = shown.length > 0;
 }
+
+for (const b of el("task-filter").querySelectorAll("[data-show]")) {
+  b.addEventListener("click", () => {
+    view.show = b.dataset.show;
+    saveView();
+    if (lastView) render(lastView);
+  });
+}
+el("task-project").addEventListener("change", (e) => {
+  view.project = e.target.value;
+  saveView();
+  if (lastView) render(lastView);
+});
 
 async function refresh() {
   try {
