@@ -22,8 +22,11 @@ async function init() {
     e.preventDefault();
     controller ? stop() : send();
   });
+  // On a phone there's no Shift: Enter makes a new line there, and the Send button sends.
+  const touch = matchMedia("(pointer: coarse)").matches;
+  if (touch) el("input").placeholder = "Message the model…";
   el("input").addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing && !touch) {
       e.preventDefault();
       controller ? null : send();
     }
@@ -318,6 +321,9 @@ function renderMarkdown(md) {
 }
 
 function codeBlock(text) {
+  // The button sits on a wrapper, not the <pre>, so it stays put when long lines scroll sideways.
+  const box = document.createElement("div");
+  box.className = "code";
   const pre = document.createElement("pre");
   pre.textContent = text;
   const copy = document.createElement("button");
@@ -325,8 +331,8 @@ function codeBlock(text) {
   copy.className = "copy";
   copy.textContent = "Copy";
   copy.onclick = () => navigator.clipboard?.writeText(text).then(() => (copy.textContent = "Copied"), () => {});
-  pre.append(copy);
-  return pre;
+  box.append(pre, copy);
+  return box;
 }
 
 function inline(parent, s) {

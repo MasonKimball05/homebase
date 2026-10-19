@@ -420,7 +420,12 @@ async function refresh() {
   }
 }
 
-window.addEventListener("hashchange", render);
+window.addEventListener("hashchange", async () => {
+  // On a phone the list sits above the project, so picking one would change nothing you can see.
+  const picked = route().id !== showing.split("|")[0];
+  await render();
+  if (picked && matchMedia("(max-width: 760px)").matches) el("view").scrollIntoView({ block: "start" });
+});
 setInterval(() => {
   if (el("live").checked && !document.hidden) refresh();
 }, REFRESH_MS);

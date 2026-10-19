@@ -28,7 +28,7 @@
 .models .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .badge { display: inline-block; margin-left: 8px; padding: 0 7px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); vertical-align: 1px; }
 .models a.button { display: inline-block; font-size: 13px; padding: 4px 12px; border-radius: 8px; border: 1px solid var(--border); color: var(--text); text-decoration: none; }
-.models a.button:hover { border-color: var(--accent); color: var(--accent); }
+@media (hover: hover) { .models a.button:hover { border-color: var(--accent); color: var(--accent); } }
 
 .steps { margin: 8px 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; }
 .copy-field { display: inline-flex; align-items: center; gap: 8px; margin-left: 4px; flex-wrap: wrap; }
@@ -45,4 +45,7 @@
   .models th:nth-child(3), .models td:nth-child(3), .models th:nth-child(4), .models td:nth-child(4) { display: none; }
   .endpoints { grid-template-columns: 1fr; }
   .endpoints dd { margin-bottom: 6px; }
+  .models a.button { padding: 7px 14px; }
+  .copy-block button { padding: 6px 12px; }
+  .copy-block pre { padding-top: 44px; padding-right: 14px; }
 }

@@ -11,7 +11,7 @@
 .project-list { border-right: 1px solid var(--border); background: var(--surface); overflow-y: auto; max-height: calc(100vh - 57px); position: sticky; top: 57px; }
 .project-list ul { list-style: none; margin: 0; padding: 6px; }
 .project-list a { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; padding: 8px 10px; border-radius: 8px; color: var(--text); text-decoration: none; }
-.project-list a:hover { background: var(--surface-2); }
+@media (hover: hover) { .project-list a:hover { background: var(--surface-2); } }
 .project-list a[aria-current="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .project-list .p-name { font-weight: 600; overflow-wrap: anywhere; }
 .project-list .p-when { grid-column: 1; font-size: 12px; color: var(--muted); }
@@ -80,6 +80,12 @@
   .project-list { position: static; max-height: 220px; border-right: none; border-bottom: 1px solid var(--border); }
   .project-view { padding: 16px; }
   .entries .e-meta:last-child { display: none; }
+  .entries td { padding: 10px 12px; }
+  .live { padding: 6px 0; }
+  /* The path gets its own line instead of a narrow column between the badges. */
+  .file-change > summary { flex-wrap: wrap; row-gap: 4px; }
+  .fc-path { flex: 1 1 200px; }
+  .open-file { padding: 4px 0; }
 }
 @media (prefers-reduced-motion: reduce) { .file-change > summary::before { transition: none; } }
 
@@ -91,7 +97,7 @@
 .sync-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
 .sync-buttons button, .commit-actions button { font-size: 13px; padding: 4px 12px; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-button.primary:hover:not(:disabled) { color: #fff; filter: brightness(1.08); }
+@media (hover: hover) { button.primary:hover:not(:disabled) { color: #fff; filter: brightness(1.08); } }
 .commit-form { margin-top: 10px; padding: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; gap: 6px; max-width: 640px; }
 .commit-form label { font-weight: 600; font-size: 13px; }
 .commit-form textarea { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); resize: vertical; }
@@ -107,3 +113,8 @@ button.primary:hover:not(:disabled) { color: #fff; filter: brightness(1.08); }
 .count:empty { display: none; }
 select.branch { color: var(--text); cursor: pointer; max-width: 260px; }
 select.branch:disabled { cursor: default; opacity: 0.6; }
+/* After the git button rules above, so these win on a phone. */
+@media (max-width: 760px) {
+  select.branch { max-width: 100%; padding: 4px 8px; }
+  .sync-buttons button, .commit-actions button { padding: 8px 14px; }
+}

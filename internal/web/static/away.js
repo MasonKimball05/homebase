@@ -64,7 +64,7 @@ for (const b of document.querySelectorAll("[data-mode]")) {
 
 // ---------------- tasks ----------------
 
-const open = new Map(); // id → which panel is open ("diff" | "log"), kept across refreshes
+const open = new Set(); // "<id>:diff" / "<id>:log" for the panels that are open, kept across refreshes
 
 function renderDiff(text) {
   const box = make("div", undefined, "diff");
@@ -82,21 +82,30 @@ function renderDiff(text) {
 function panel(t, kind, label) {
   const d = make("details");
   d.append(make("summary", label));
-  d.open = open.get(t.id) === kind;
+  const key = `${t.id}:${kind}`;
+  d.open = open.has(key);
+  // One fetch per opening: setting d.open above also fires "toggle", which used to load it twice.
+  let fetched = false;
   const load = async () => {
-    d.querySelector(".diff, .log")?.remove();
+    fetched = true;
+    let body;
     try {
       const text = await api(`api/away/tasks/${encodeURIComponent(t.id)}/${kind}`);
-      d.append(kind === "diff" ? renderDiff(text) : make("pre", text || "(empty)", "log"));
+      body = kind === "diff" ? renderDiff(text) : make("pre", text || "(empty)", "log");
     } catch (e) {
-      d.append(make("pre", e.message, "log"));
+      body = make("pre", e.message, "log");
     }
+    d.querySelector(".diff, .log")?.remove();
+    d.append(body);
   };
   d.addEventListener("toggle", () => {
     if (d.open) {
-      open.set(t.id, kind);
-      load();
-    } else if (open.get(t.id) === kind) open.delete(t.id);
+      open.add(key);
+      if (!fetched) load();
+    } else {
+      open.delete(key);
+      fetched = false;
+    }
   });
   if (d.open) load();
   return d;
@@ -110,7 +119,9 @@ function action(t, name, label, confirmText) {
     if (confirmText && !confirm(confirmText)) return;
     b.disabled = true;
     try {
-      render(await api(`api/away/tasks/${encodeURIComponent(t.id)}/${name}`, {}));
+      const v = await api(`api/away/tasks/${encodeURIComponent(t.id)}/${name}`, {});
+      lastTasks = ""; // redraw even if nothing changed, so this button comes back
+      render(v);
       showError("");
     } catch (e) {
       showError(e.message);
@@ -120,8 +131,11 @@ function action(t, name, label, confirmText) {
   return b;
 }
 
+const when = (t) => (t.finished ? `finished ${ago(t.finished)}` : t.started && t.status === "running" ? `started ${ago(t.started)}` : `added ${ago(t.created)}`);
+
 function renderTask(t) {
   const li = make("li", undefined, "task");
+  li.dataset.id = t.id;
   const head = make("div", undefined, "task-head");
   head.append(make("span", t.project, "task-project"));
   const st = make("span", t.status === "running" && t.stage ? t.stage : STATUS[t.status] || t.status, "status");
@@ -129,7 +143,7 @@ function renderTask(t) {
   head.append(st);
   if (t.verdict === "fixed") head.append(make("span", "Claude finished it", "muted small"));
   if (t.branch) head.append(make("span", t.branch + (t.pushed ? " (pushed)" : ""), "branch-name muted"));
-  head.append(make("span", t.finished ? `finished ${ago(t.finished)}` : t.started && t.status === "running" ? `started ${ago(t.started)}` : `added ${ago(t.created)}`, "task-when muted small"));
+  head.append(make("span", when(t), "task-when muted small"));
   li.append(head);
   li.append(make("p", t.text, "task-text"));
   if (t.notes) li.append(make("div", t.notes, "task-notes"));
@@ -179,9 +193,21 @@ function renderTask(t) {
   return li;
 }
 
+let lastTasks = "";
+
 function render(v) {
   renderMode(v);
   const ul = el("tasks");
+  const key = JSON.stringify(v.tasks);
+  if (key === lastTasks) {
+    // Nothing new: keep the page (open diffs, their scroll, yours) as it is, and just age the times.
+    for (const t of v.tasks) {
+      const span = ul.querySelector(`[data-id="${CSS.escape(t.id)}"] .task-when`);
+      if (span) span.textContent = when(t);
+    }
+    return;
+  }
+  lastTasks = key;
   ul.replaceChildren(...v.tasks.map(renderTask));
   el("empty").hidden = v.tasks.length > 0;
 }
@@ -335,13 +361,15 @@ async function loadRecord() {
       const result = `${e.author === "qwen+claude" ? "Claude fixed · " : ""}${OUTCOME[e.outcome] ?? e.outcome}`;
       tr.append(
         make("td", new Date(e.finished).toLocaleDateString([], { month: "short", day: "numeric" })),
-        make("td", `${e.project}: ${e.task.length > 90 ? e.task.slice(0, 89) + "…" : e.task}`, "task"),
+        make("td", `${e.project}: ${e.task.length > 90 ? e.task.slice(0, 89) + "…" : e.task}`, "rec-task"),
         make("td", e.heldOut ? "held out" : String(e.shown)),
         make("td", duration(e.stats.qwenSeconds)),
         make("td", String(e.stats.testRuns)),
         first,
         make("td", result, e.outcome === "accepted" ? "yes" : e.outcome === "discarded" ? "no" : ""),
       );
+      // Labels for the phone layout, where the table's header row is hidden (away.css).
+      ["", "", "Examples", "Model time", "Test runs", "First review", "Result"].forEach((label, i) => label && (tr.cells[i].dataset.label = label));
       tr.title = e.task;
       return tr;
     }),

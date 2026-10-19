@@ -33,7 +33,7 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .muted { color: var(--muted); }
 
 .bar {
@@ -97,12 +97,15 @@ button {
   font: inherit; font-weight: 550; padding: 6px 12px; border-radius: 8px;
   border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer;
 }
-button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-button.danger:hover:not(:disabled) { border-color: var(--bad); color: var(--bad); }
+/* Hover colors only where there's a real pointer: on a phone they'd stick after a tap. */
+@media (hover: hover) {
+  button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  button.danger:hover:not(:disabled) { border-color: var(--bad); color: var(--bad); }
+}
 button.ghost { margin-left: auto; }
 button:disabled { opacity: 0.45; cursor: default; }
 
-.logs { margin-top: 20px; background: var(--log-bg); border-radius: 12px; overflow: hidden; }
+.logs { margin-top: 20px; background: var(--log-bg); border-radius: 12px; overflow: hidden; scroll-margin-top: 72px; }
 .logs-head { display: flex; align-items: center; gap: 12px; padding: 10px 14px; color: var(--log-text); border-bottom: 1px solid #22262e; }
 .logs-head h2 { margin: 0; font-size: 14px; flex: 1; }
 .logs-head button { background: transparent; color: var(--log-text); border-color: #333a45; margin: 0; }
@@ -117,7 +120,17 @@ button:disabled { opacity: 0.45; cursor: default; }
 
 @media (max-width: 600px) {
   main { padding: 16px; }
-  .bar { padding: 12px 16px; }
+  /* Not sticky on a phone: wrapped onto two or three lines it would take a sixth of the screen. */
+  .bar { position: static; padding: 10px 16px; gap: 4px 14px; }
+  .summary { flex-basis: 100%; margin-left: 0; order: 1; }
+  .chat-link { padding: 6px 0; }
+  .link { display: inline-block; padding: 4px 0; }
+  .bar > .chat-link { order: 2; }
+  .logs { scroll-margin-top: 8px; }
+  .logs pre { height: 60vh; }
+  /* Under 16px, iOS zooms the page in when a field is focused, and stays zoomed. */
+  input, select, textarea { font-size: 16px !important; }
+  button { padding: 8px 14px; }
   .grid { grid-template-columns: 1fr; }
   .facts { grid-template-columns: repeat(2, 1fr); }
   .meters { grid-template-columns: 1fr; }

@@ -21,7 +21,8 @@
 .add textarea { resize: vertical; min-height: 80px; }
 .add-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 4px; }
 
-.tasks { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+/* minmax(0, 1fr): an open diff's long lines scroll inside it instead of widening the whole card. */
+.tasks { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .task { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; }
 .task-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .task-project { font-weight: 700; }
@@ -30,7 +31,7 @@
 .task-notes { margin: 6px 0; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
 .task-error { color: var(--bad); }
 .task-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-.branch-name { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.branch-name { font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
 
 .status { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
 .status[data-s="running"] { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
@@ -67,12 +68,21 @@
 .record-scroll { overflow-x: auto; }
 .record-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .record-table th, .record-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-.record-table td.task { white-space: normal; min-width: 220px; }
+.record-table td.rec-task { white-space: normal; min-width: 220px; }
 .record-table .yes { color: var(--ok); }
 .record-table .no { color: var(--bad); }
 
 @media (max-width: 600px) {
   .mode-buttons { display: flex; }
-  .mode-buttons button { flex: 1; }
+  .mode-buttons button { flex: 1; padding: 10px 8px; }
   .task-when { margin-left: 0; width: 100%; }
+  .task summary, .suggest summary { padding: 6px 0; }
+  .add-row select { flex: 1; min-width: 0; }
+  /* The track record as one small card per attempt instead of a seven-column table. */
+  .record-table thead { display: none; }
+  .record-table, .record-table tbody { display: block; }
+  .record-table tr { display: flex; flex-wrap: wrap; gap: 2px 14px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .record-table td { border: 0; padding: 0; }
+  .record-table td.rec-task { order: -1; flex-basis: 100%; min-width: 0; font-weight: 600; }
+  .record-table td[data-label]::before { content: attr(data-label) ": "; color: var(--muted); }
 }
