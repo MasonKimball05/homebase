@@ -455,7 +455,7 @@ func TestARestartBeforeAnyCommitStartsOver(t *testing.T) {
 // behind or kept as an example.
 func TestABrokenModelSwitchesAwayOff(t *testing.T) {
 	for name, err := range map[string]error{
-		"model error":   &ModelError{"Ollama: HTTP 500 llama-server binary not found"},
+		"model error":   &ModelError{Msg: "Ollama: HTTP 500 llama-server binary not found"},
 		"runner exited": fmt.Errorf("ollama is down"),
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -924,5 +924,77 @@ func TestEveryThirdTaskIsHeldOutForComparison(t *testing.T) {
 	}
 	if ex := readExample(t, s, second.ID); !ex.HeldOut {
 		t.Fatal("the example doesn't say it was held out")
+	}
+}
+
+// 10-20: one garbled tool call isn't a broken model. When the model still
+// answers, the round gets one more go, and Away stays on.
+func TestOneBrokenAnswerIsRetried(t *testing.T) {
+	calls := 0
+	steps := &fakeSteps{reviews: []string{`{"verdict":"pass","notes":"ok"}`}}
+	steps.qwen = func(dir, task string) error {
+		calls++
+		if calls == 1 {
+			return &ModelError{Msg: "expected element type <function> but have <parameter>"}
+		}
+		return os.WriteFile(filepath.Join(dir, "out.txt"), []byte("done\n"), 0o644)
+	}
+	s, _, _ := setup(t, steps)
+	s.generate = func(ctx context.Context, prompt string) (string, error) { return "OK", nil }
+	task, _ := s.Add("proj", "write out.txt")
+	s.SetMode(ModeOn)
+	got := waitFor(t, s, task.ID, finished)
+	if got.Status != StatusDone || got.Verdict != "pass" || calls != 2 {
+		t.Fatalf("%d calls, %+v", calls, got)
+	}
+	if v := s.View(); v.Mode != ModeOn || v.Stopped != "" {
+		t.Fatalf("Away switched itself off: %q %q", v.Mode, v.Stopped)
+	}
+}
+
+// If its answers keep breaking while the model itself answers, that task
+// fails and the queue goes on.
+func TestAnswersThatKeepBreakingFailOnlyTheTask(t *testing.T) {
+	steps := &fakeSteps{reviews: []string{`{"verdict":"pass","notes":"ok"}`}}
+	steps.qwen = func(dir, task string) error {
+		if task == "bad" {
+			return &ModelError{Msg: "expected element type <function> but have <parameter>"}
+		}
+		return os.WriteFile(filepath.Join(dir, "out.txt"), []byte("done\n"), 0o644)
+	}
+	s, _, _ := setup(t, steps)
+	s.generate = func(ctx context.Context, prompt string) (string, error) { return "OK", nil }
+	bad, _ := s.Add("proj", "bad")
+	good, _ := s.Add("proj", "good")
+	s.SetMode(ModeOn)
+	if got := waitFor(t, s, bad.ID, finished); got.Status != StatusFailed || !strings.Contains(got.Error, "its answer broke off") {
+		t.Fatalf("%+v", got)
+	}
+	if got := waitFor(t, s, good.ID, finished); got.Status != StatusDone {
+		t.Fatalf("the queue stopped: %+v", got)
+	}
+	if v := s.View(); v.Mode != ModeOn {
+		t.Fatalf("Away switched itself off: %q", v.Stopped)
+	}
+}
+
+// A model that sees nothing (no tool calls) still stops Away at once, even
+// though it would answer a one-line question.
+func TestASetupProblemStillStopsAway(t *testing.T) {
+	steps := &fakeSteps{qwen: func(dir, task string) error {
+		return &ModelError{Setup: true, Msg: "it answered without using a single tool"}
+	}}
+	s, _, _ := setup(t, steps)
+	asked := false
+	s.generate = func(ctx context.Context, prompt string) (string, error) { asked = true; return "OK", nil }
+	s.Add("proj", "anything")
+	s.SetMode(ModeOn)
+	deadline := time.Now().Add(20 * time.Second)
+	for s.View().Mode != ModeOff && time.Now().Before(deadline) {
+		s.step(context.Background())
+		time.Sleep(20 * time.Millisecond)
+	}
+	if s.View().Mode != ModeOff || asked {
+		t.Fatalf("mode %q, asked the model: %v", s.View().Mode, asked)
 	}
 }

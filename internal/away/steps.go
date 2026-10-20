@@ -75,13 +75,13 @@ func (c CLI) Qwen(ctx context.Context, dir, task, tests, transcript string, log 
 	// The runner exits cleanly even when the model never answered (Ollama
 	// down or broken): its transcript then ends in an error item.
 	if msg := transcriptError(transcript); msg != "" {
-		return &ModelError{msg}
+		return &ModelError{Msg: msg}
 	}
 	// No tool call at all means it never got to work on the task: on 10-18
 	// Ollama ran with a 4,096-token context, cut the prompt to its last few
 	// lines, and Qwen answered those in prose, five tasks in a row.
 	if tools, input := transcriptTools(transcript); tools == 0 {
-		return &ModelError{fmt.Sprintf("it answered without using a single tool (its prompt was %d tokens), so it probably never saw the task: check the model, and Ollama's context length", input)}
+		return &ModelError{Setup: true, Msg: fmt.Sprintf("it answered without using a single tool (its prompt was %d tokens), so it probably never saw the task: check the model, and Ollama's context length", input)}
 	}
 	return nil
 }
@@ -114,7 +114,14 @@ func transcriptTools(path string) (calls, input int) {
 
 // ModelError: the local model couldn't be used at all (the task stops there,
 // rather than sending an empty attempt to review).
-type ModelError struct{ Msg string }
+//
+// Setup: a sign the model is set up wrong rather than one answer going bad
+// (no tool calls at all: it never saw the task). A quick question can't tell
+// that from working, so Away stops without asking.
+type ModelError struct {
+	Msg   string
+	Setup bool
+}
 
 func (e *ModelError) Error() string { return e.Msg }
 

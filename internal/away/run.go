@@ -126,6 +126,19 @@ func (s *Service) runTask(ctx context.Context, id string) {
 	s.poke()
 }
 
+// modelAnswers: whether the local model answers a one-line question, to
+// tell a broken model from one bad answer. No way to ask (tests, or no
+// Ollama configured) counts as no.
+func (s *Service) modelAnswers(ctx context.Context) bool {
+	if s.generate == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+	out, err := s.generate(ctx, "Reply with the single word OK.")
+	return err == nil && strings.TrimSpace(out) != ""
+}
+
 // modelDown: the local model (or its runner) can't be used, so nothing can be.
 type modelDown struct{ msg string }
 
@@ -199,6 +212,7 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 	checked := false  // the pre-review check sends work back at most once
 	mutated := false  // so does the mutation check (mutants.go)
 	mutantNotes := "" // what it sent back, for the review to follow up
+	retried := false  // a round whose answer broke gets one more go
 	for round := 1; round <= s.set.Rounds; round++ {
 		attempt++
 		stage(fmt.Sprintf("local model, round %d of %d", round, s.set.Rounds))
@@ -214,15 +228,35 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 			return "", ctx.Err()
 		}
 		var me *ModelError
+		broke := false // the model works, but this answer went wrong
 		if errors.As(qerr, &me) {
-			return "", &modelDown{me.Msg}
+			// 10-20: one garbled tool call ("expected element type <function>
+			// but have <parameter>") switched Away off for the night. Ask the
+			// model something first: if it answers, only this answer broke.
+			if me.Setup || !s.modelAnswers(ctx) {
+				return "", &modelDown{me.Msg}
+			}
+			broke = true
+			qerr = fmt.Errorf("its answer broke off: %s", me.Msg)
+			if log != nil {
+				fmt.Fprintf(log, "---- %v (the model itself answers, so Away carries on)\n", qerr)
+			}
 		}
 		sha, n, cerr := commitAll(ctx, wt, fmt.Sprintf("Away: %s (local model, round %d)", firstLine(t.Text, 60), attempt), local)
 		if cerr != nil {
 			return "", cerr
 		}
-		if qerr != nil && n == 0 && attempt == 1 {
-			return "", &modelDown{"it didn't run: " + qerr.Error()}
+		if qerr != nil && n == 0 {
+			switch {
+			case broke && !retried:
+				retried = true
+				round--
+				continue
+			case broke:
+				return "", qerr // this task's problem, not Away's: the queue goes on
+			case attempt == 1:
+				return "", &modelDown{"it didn't run: " + qerr.Error()}
+			}
 		}
 		t.Rounds = append(t.Rounds, Round{Who: "qwen", Seconds: int(time.Since(started).Seconds()), Commit: sha, Notes: errText(qerr)})
 

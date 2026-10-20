@@ -347,6 +347,9 @@ Along the way it learns from its own history (`internal/away`):
   without calling a single tool (it never saw the task: on 10-18 Ollama ran
   with a 4,096-token context), the task goes back in the queue and Away
   switches itself off, says why on the Away page, and notifies you once.
+  An error in one answer (10-20: a garbled tool call) first gets a one-line
+  question to the model: if it answers, only that answer broke, so the round
+  gets one more go and, failing that, just that task fails.
 - **Suggested tasks** (`suggest.go`): Python functions no test mentions; the
   local model drafts the cases to test, for you to check and add.
 
