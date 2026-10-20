@@ -98,8 +98,12 @@ func (s *Service) mutationCheck(ctx context.Context, t Task, wt, command string,
 	if err := os.WriteFile(script, mutantsPy, 0o644); err != nil {
 		return "", ""
 	}
-	py := fmt.Sprintf(`%s "%s"`, python(), script)
-	ok, out := s.steps.Tests(ctx, wt, fmt.Sprintf(`%s list "%s" %s`, py, rel, fn), log)
+	// No quotes: on Windows, Go escapes them on the way to cmd /C, and Python
+	// then looked for a file literally named "C:\...\mutants.py" (10-20: the
+	// check skipped every task). Neither path can hold a space: the log
+	// folder is Homebase's own, and underTest only matches [\w./-] paths.
+	py := python() + " " + script
+	ok, out := s.steps.Tests(ctx, wt, mutantCommand(py, "list", rel, fn, -1), log)
 	var list []mutant
 	if !ok || json.Unmarshal([]byte(lastLineWith(out, "[")), &list) != nil || len(list) == 0 {
 		return "", ""
@@ -118,7 +122,7 @@ func (s *Service) mutationCheck(ctx context.Context, t Task, wt, command string,
 		if err := os.WriteFile(file, orig, 0o644); err != nil {
 			return "", ""
 		}
-		if ok, _ := s.steps.Tests(ctx, wt, fmt.Sprintf(`%s apply "%s" %s %d`, py, rel, fn, mu.ID), log); !ok {
+		if ok, _ := s.steps.Tests(ctx, wt, mutantCommand(py, "apply", rel, fn, mu.ID), log); !ok {
 			continue
 		}
 		passed, out := s.steps.Tests(ctx, wt, line, log)
@@ -167,6 +171,15 @@ func (s *Service) mutationCheck(ctx context.Context, t Task, wt, command string,
 	}
 	b.WriteString("\nThe real code is back as it was. Don't change it; change your tests, run them, then stop.")
 	return b.String(), summary
+}
+
+// mutantCommand: a mutants.py command line, with no quotes in it (see mutationCheck).
+func mutantCommand(py, verb, rel, fn string, id int) string {
+	line := fmt.Sprintf("%s %s %s %s", py, verb, rel, fn)
+	if id >= 0 {
+		line += fmt.Sprintf(" %d", id)
+	}
+	return line
 }
 
 // lastLineWith: the last line of out that starts with prefix (the script's

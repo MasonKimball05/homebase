@@ -163,3 +163,19 @@ func TestWeakTestsGoBackBeforeReview(t *testing.T) {
 		t.Fatalf("a mutant reached the branch:\n%s", b)
 	}
 }
+
+// 10-20: quotes in these lines reached Python escaped on Windows, and the
+// check never ran. The script and file paths have no spaces, so no quotes.
+func TestMutantCommandsHaveNoQuotes(t *testing.T) {
+	for _, line := range []string{
+		mutantCommand(`python C:\Users\Admin\apps\homebase\logs\away\mutants.py`, "list", "src/groupme.py", "blocked_reason", -1),
+		mutantCommand("python3 /tmp/mutants.py", "apply", "src/groupme.py", "blocked_reason", 3),
+	} {
+		if strings.ContainsAny(line, `"'`) {
+			t.Errorf("quoted: %s", line)
+		}
+	}
+	if got := mutantCommand("py m.py", "apply", "a.py", "f", 3); got != "py m.py apply a.py f 3" {
+		t.Fatal(got)
+	}
+}
