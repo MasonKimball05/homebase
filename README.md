@@ -332,6 +332,17 @@ Along the way it learns from its own history (`internal/away`):
   Findings go back to it once, without using up a round. On the 10-18 and
   10-19 batches it would have caught four of Claude's send-backs, and it
   flags none of the accepted versions.
+- **Do its tests catch bugs?** (`mutants.go`, `mutants.py`): for a task
+  that says "Add tests for <function> in <file>.py", Away then breaks that
+  function on purpose, one small change at a time (the whole function
+  replaced by one that raises, a comparison flipped, a `not` dropped, an `if`
+  turned around, a returned constant changed, a `.filter`/`.exclude`/
+  `.order_by` left out of a query, a login or permission decorator removed),
+  runs the new tests against each, and puts the file back. Tests that pass
+  without the function, and changes no test noticed, go back to the model
+  once, and the review is told what was found. Django and unittest projects
+  (it needs `-v 2` to name each test). On 10-20 it found the accepted
+  `get_assignable_members` tests never checked the ordering.
 - **A broken model stops Away**: if the local model can't run, or answers
   without calling a single tool (it never saw the task: on 10-18 Ollama ran
   with a 4,096-token context), the task goes back in the queue and Away

@@ -195,8 +195,10 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 
 	notes := ""
 	verdict := ""
-	attempt := 0     // Qwen runs so far: the rounds, plus one if the check sent it back
-	checked := false // the pre-review check sends work back at most once
+	attempt := 0      // Qwen runs so far: the rounds, plus one if the check sent it back
+	checked := false  // the pre-review check sends work back at most once
+	mutated := false  // so does the mutation check (mutants.go)
+	mutantNotes := "" // what it sent back, for the review to follow up
 	for round := 1; round <= s.set.Rounds; round++ {
 		attempt++
 		stage(fmt.Sprintf("local model, round %d of %d", round, s.set.Rounds))
@@ -260,9 +262,36 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 			}
 		}
 
+		// Do its tests notice when the code is wrong? Once per task, after
+		// they pass; also without using up a round.
+		if !mutated && ran != "" {
+			base := s.set.Tests[t.Project]
+			if targets := testTargets(base, changedTestFiles(ctx, wt, t.BaseCommit)); len(targets) > 0 {
+				stage("checking its tests catch bugs")
+				started = time.Now()
+				found, summary := s.mutationCheck(ctx, *t, wt, base, targets, log)
+				if ctx.Err() != nil {
+					return "", ctx.Err()
+				}
+				if summary != "" {
+					mutated = true
+					v := "pass"
+					if found != "" {
+						v = "revise"
+					}
+					t.Rounds = append(t.Rounds, Round{Who: "mutants", Verdict: v, Notes: summary, Seconds: int(time.Since(started).Seconds())})
+				}
+				if found != "" {
+					verdict, notes, mutantNotes = "revise", found, found
+					round--
+					continue
+				}
+			}
+		}
+
 		stage(fmt.Sprintf("Claude reviewing round %d", round))
 		started = time.Now()
-		reply, err := s.steps.Claude(ctx, wt, reviewPrompt(*t, ran, s.set.Tests[t.Project]), false, log)
+		reply, err := s.steps.Claude(ctx, wt, reviewPrompt(*t, ran, s.set.Tests[t.Project], mutantNotes), false, log)
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
@@ -381,10 +410,13 @@ func testHint(command string) string {
 	return "here: `" + command + " <test file or module>`"
 }
 
-func reviewPrompt(t Task, testsPassed, testCommand string) string {
+func reviewPrompt(t Task, testsPassed, testCommand, mutantNotes string) string {
 	ran := ""
 	if testsPassed != "" {
 		ran = " Away already ran `" + testsPassed + "` on this branch and it passed, so judge the tests' quality and coverage rather than whether they run."
+	}
+	if mutantNotes != "" {
+		ran += "\n\nBefore this review, Away's mutation check (the code under test broken on purpose, one change at a time) sent the work back once with these notes. Check whether the tests now catch each change a listed case covers, or whether the model's reply rightly says no listed case covers it:\n\n<mutation-check>\n" + mutantNotes + "\n</mutation-check>"
 	}
 	return fmt.Sprintf(`You are checking work done unattended by a local model (Qwen) on branch %s of this repository, while its owner is away. The task it was given:
 

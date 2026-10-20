@@ -37,7 +37,7 @@ const STATUS = {
   queued: "queued", running: "working", done: "ready to review", "needs-you": "needs you",
   failed: "failed", accepted: "merged", discarded: "discarded", cancelled: "cancelled",
 };
-const WHO = { qwen: "Local model", tests: "Its tests", check: "Quick check", review: "Claude reviewed", "claude-fix": "Claude fixed it" };
+const WHO = { qwen: "Local model", tests: "Its tests", check: "Quick check", mutants: "Mutation check", review: "Claude reviewed", "claude-fix": "Claude fixed it" };
 
 // ---------------- mode ----------------
 
