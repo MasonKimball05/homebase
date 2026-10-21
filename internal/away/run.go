@@ -242,7 +242,7 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 				fmt.Fprintf(log, "---- %v (the model itself answers, so Away carries on)\n", qerr)
 			}
 		}
-		sha, n, cerr := commitAll(ctx, wt, fmt.Sprintf("Away: %s (local model, round %d)", firstLine(t.Text, 60), attempt), local)
+		sha, n, cerr := commitAll(ctx, wt, fmt.Sprintf("Away: %s (local model, round %d)", firstLine(t.Text, 60), attempt), local, t.BaseCommit)
 		if cerr != nil {
 			return "", cerr
 		}
@@ -360,7 +360,7 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 			// says "revise", which showed on the round as if it went back.
 			v = "fixed"
 		}
-		sha, _, cerr := commitAll(ctx, wt, fmt.Sprintf("Away: %s (Claude's fix)", firstLine(t.Text, 60)), local)
+		sha, _, cerr := commitAll(ctx, wt, fmt.Sprintf("Away: %s (Claude's fix)", firstLine(t.Text, 60)), local, t.BaseCommit)
 		if cerr != nil {
 			return "", cerr
 		}
@@ -571,7 +571,10 @@ func linkDeps(repo, wt string, log *os.File) []string {
 
 // commitAll commits what changed in the worktree, leaving out the shared
 // folders and anything secret-looking. Returns the commit and how many files.
-func commitAll(ctx context.Context, wt, msg string, local []string) (string, int, error) {
+// commitAll commits everything changed in the worktree except secrets,
+// dependencies and the copied local files. base is the commit the task
+// started from (see strayUID).
+func commitAll(ctx context.Context, wt, msg string, local []string, base string) (string, int, error) {
 	out, err := git(ctx, wt, "status", "--porcelain", "-z", "--untracked-files=all")
 	if err != nil {
 		return "", 0, err
@@ -587,7 +590,7 @@ func commitAll(ctx context.Context, wt, msg string, local []string) (string, int
 		if e[0] == 'R' || e[0] == 'C' {
 			i++ // the old name follows
 		}
-		if skipCommit(p) || contains(local, p) {
+		if skipCommit(p) || contains(local, p) || (e[:2] == "??" && strayUID(ctx, wt, base, p)) {
 			continue
 		}
 		paths = append(paths, p)
@@ -603,6 +606,19 @@ func commitAll(ctx context.Context, wt, msg string, local []string) (string, int
 	}
 	sha, _ := git(ctx, wt, "rev-parse", "--short", "HEAD")
 	return strings.TrimSpace(sha), len(paths), nil
+}
+
+// strayUID: a new Godot .uid file for a script that was already there when
+// the task started. Godot writes those for any script missing one when it
+// imports a fresh worktree (10-20: debug_perk.gd.uid rode along on a tests
+// task). A .uid for a script this branch added is kept, as Skirmish wants.
+func strayUID(ctx context.Context, wt, base, p string) bool {
+	script, ok := strings.CutSuffix(p, ".uid")
+	if !ok || base == "" {
+		return false
+	}
+	_, err := git(ctx, wt, "cat-file", "-e", base+":"+filepath.ToSlash(script))
+	return err == nil
 }
 
 func contains(list []string, s string) bool {

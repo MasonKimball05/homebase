@@ -998,3 +998,27 @@ func TestASetupProblemStillStopsAway(t *testing.T) {
 		t.Fatalf("mode %q, asked the model: %v", s.View().Mode, asked)
 	}
 }
+
+// Godot writes a .uid for every script missing one when it imports a fresh
+// worktree. Only the ones for scripts this branch added belong in it.
+func TestStrayGodotUIDsAreNotCommitted(t *testing.T) {
+	steps := &fakeSteps{reviews: []string{`{"verdict":"pass","notes":"ok"}`}}
+	steps.qwen = func(dir, task string) error {
+		os.MkdirAll(filepath.Join(dir, "game", "tests"), 0o755)
+		os.WriteFile(filepath.Join(dir, "game", "debug_perk.gd.uid"), []byte("uid://stray\n"), 0o644)
+		os.WriteFile(filepath.Join(dir, "game", "tests", "test_new.gd"), []byte("extends SceneTree\n"), 0o644)
+		return os.WriteFile(filepath.Join(dir, "game", "tests", "test_new.gd.uid"), []byte("uid://mine\n"), 0o644)
+	}
+	s, repo, _ := setup(t, steps)
+	os.MkdirAll(filepath.Join(repo, "game"), 0o755)
+	os.WriteFile(filepath.Join(repo, "game", "debug_perk.gd"), []byte("extends Node\n"), 0o644)
+	run(t, repo, "add", "game")
+	run(t, repo, "commit", "-q", "-m", "a script without a uid")
+	task, _ := s.Add("proj", "Add tests in game/tests/test_new.gd")
+	s.SetMode(ModeOn)
+	got := waitFor(t, s, task.ID, finished)
+	files := run(t, repo, "diff", "--name-only", "main.."+got.Branch)
+	if !strings.Contains(files, "game/tests/test_new.gd.uid") || strings.Contains(files, "debug_perk.gd.uid") {
+		t.Fatalf("branch changes:\n%s", files)
+	}
+}
