@@ -121,9 +121,32 @@ type state struct {
 	Mode string `json:"mode"`
 	// Stopped: why Away switched itself off (the local model broke), until
 	// someone sets the mode again.
-	Stopped string  `json:"stopped,omitempty"`
+	Stopped string `json:"stopped,omitempty"`
+	// Waiting: the local model didn't answer, so Away keeps its mode but
+	// starts nothing until Retry (run.go), until a task gets past the model
+	// or someone sets the mode again.
+	Waiting *Wait   `json:"waiting,omitempty"`
 	Tasks   []*Task `json:"tasks"`
 }
+
+// Wait: the local model didn't answer (10-21: Ollama not ready yet, still
+// updating itself just after the PC was switched on), so Away waits a while
+// and tries again before giving up.
+type Wait struct {
+	Reason string    `json:"reason"`
+	Since  time.Time `json:"since"` // the first try that got no answer
+	At     time.Time `json:"at"`    // the last one
+	Retry  time.Time `json:"retry"` // when the next one starts
+	Tries  int       `json:"tries"` // tries without an answer so far
+	Max    int       `json:"max"`   // Away switches off after this many
+}
+
+// How long Away waits for a model that didn't answer, and how many tries
+// it gets in all (about half an hour) before Away switches off.
+const (
+	modelWait  = 10 * time.Minute
+	modelTries = 4
+)
 
 type Service struct {
 	set      Settings
@@ -237,6 +260,9 @@ func (s *Service) step(ctx context.Context) {
 	if !away {
 		return
 	}
+	if w := s.st.Waiting; w != nil && s.now().Before(w.Retry) {
+		return
+	}
 	var next *Task
 	for _, t := range s.st.Tasks {
 		if t.Status == StatusQueued {
@@ -288,6 +314,7 @@ type View struct {
 	IdleSeconds *int    `json:"idleSeconds"` // null: the idle reporter isn't running
 	Running     string  `json:"running,omitempty"`
 	Stopped     string  `json:"stopped,omitempty"` // why Away switched itself off
+	Waiting     *Wait   `json:"waiting,omitempty"` // the local model didn't answer: when Away tries again
 	Tasks       []*Task `json:"tasks"`
 }
 
@@ -295,6 +322,10 @@ func (s *Service) View() View {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v := View{Mode: s.st.Mode, IdleMinutes: s.set.IdleMinutes, Running: s.running, Stopped: s.st.Stopped}
+	if s.st.Waiting != nil {
+		w := *s.st.Waiting
+		v.Waiting = &w
+	}
 	if d, ok := s.idleFor(); ok {
 		n := int(d.Seconds())
 		v.IdleSeconds = &n
@@ -313,7 +344,8 @@ func (s *Service) SetMode(mode string) error {
 		return errors.New("mode is off, on or idle")
 	}
 	s.mu.Lock()
-	s.st.Mode, s.st.Stopped = mode, ""
+	// Setting the mode yourself also means "try the model now".
+	s.st.Mode, s.st.Stopped, s.st.Waiting = mode, "", nil
 	s.saveLocked()
 	s.mu.Unlock()
 	s.poke()

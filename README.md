@@ -343,13 +343,18 @@ Along the way it learns from its own history (`internal/away`):
   once, and the review is told what was found. Django and unittest projects
   (it needs `-v 2` to name each test). On 10-20 it found the accepted
   `get_assignable_members` tests never checked the ordering.
-- **A broken model stops Away**: if the local model can't run, or answers
-  without calling a single tool (it never saw the task: on 10-18 Ollama ran
-  with a 4,096-token context), the task goes back in the queue and Away
-  switches itself off, says why on the Away page, and notifies you once.
-  An error in one answer (10-20: a garbled tool call) first gets a one-line
-  question to the model: if it answers, only that answer broke, so the round
-  gets one more go and, failing that, just that task fails.
+- **A broken model stops Away**: if the local model answers without calling
+  a single tool (it never saw the task: on 10-18 Ollama ran with a
+  4,096-token context), the task goes back in the queue and Away switches
+  itself off, says why on the Away page, and notifies you once. If the model
+  can't be reached (10-21: Ollama still updating itself just after the PC
+  was switched on), the task goes back in the queue and Away waits 10
+  minutes, keeping its mode, then tries again; the Away page says when.
+  After 4 tries (about half an hour) without an answer it switches off and
+  notifies you, as above. Setting the mode yourself tries again straight
+  away. An error in one answer (10-20: a garbled tool call) first gets a
+  one-line question to the model: if it answers, only that answer broke, so
+  the round gets one more go and, failing that, just that task fails.
 - **Suggested tasks** (`suggest.go`): Python functions no test mentions; the
   local model drafts the cases to test, for you to check and add.
 

@@ -29,8 +29,9 @@ func (s *Service) runTask(ctx context.Context, id string) {
 	rec := newRecording()
 	outcome, err := s.work(ctx, &task, log, rec)
 	// The local model being broken isn't this task's fault: it goes back in
-	// the queue and Away switches itself off, rather than failing every
-	// task after it the same way (or spending Claude on empty attempts).
+	// the queue and Away waits, then tries again (or, set up wrong or still
+	// not answering, switches itself off), rather than failing every task
+	// after it the same way (or spending Claude on empty attempts).
 	var down *modelDown
 	isDown := errors.As(err, &down)
 	// A failure before anything was committed leaves no branch behind.
@@ -68,13 +69,34 @@ func (s *Service) runTask(ctx context.Context, id string) {
 	s.mu.Lock()
 	_, stopped := cancelledIDs.LoadAndDelete(id)
 	s.cancel, s.running = nil, ""
+	var wait *Wait // set when Away waits for the model rather than switching off
+	switch {
+	case isDown && !interrupted:
+		// 10-21: a task started two minutes after the PC was switched on,
+		// while Ollama was still installing an update, and Away stayed off
+		// for hours. Wait, then try again.
+		now, w := s.now(), s.st.Waiting
+		if w == nil {
+			w = &Wait{Since: now, Max: modelTries}
+		}
+		w.Reason, w.At, w.Retry, w.Tries = down.Error(), now, now.Add(modelWait), w.Tries+1
+		if down.setup || w.Tries >= w.Max {
+			s.st.Mode, s.st.Stopped, s.st.Waiting = ModeOff, down.Error(), nil
+			if w.Tries > 1 {
+				s.st.Stopped += fmt.Sprintf(" (no answer in %d tries over %d min)", w.Tries, int(now.Sub(w.Since).Minutes()))
+			}
+		} else {
+			s.st.Waiting, wait = w, w
+		}
+	case !interrupted:
+		s.st.Waiting = nil // it got past the model
+	}
 	t := s.find(id)
 	if t != nil {
 		switch {
 		case isDown && !interrupted:
 			t.Status, t.Stage, t.Error = StatusQueued, "", ""
 			t.Branch, t.Base, t.BaseCommit, t.Rounds, t.Changed, t.Shown = "", "", "", []Round{}, 0, nil
-			s.st.Mode, s.st.Stopped = ModeOff, down.Error()
 		case interrupted && !stopped:
 			// Paused (you came back, or switched it off): start over later, same place in the queue.
 			t.Status, t.Stage = StatusQueued, ""
@@ -90,14 +112,26 @@ func (s *Service) runTask(ctx context.Context, id string) {
 			t.Verdict, t.Notes, t.Changed = task.Verdict, task.Notes, task.Changed
 		}
 	}
+	stoppedWhy := s.st.Stopped
+	var retry string
+	var try, of int
+	if wait != nil {
+		retry, try, of = wait.Retry.Format("15:04"), wait.Tries+1, wait.Max
+	}
 	s.saveLocked()
 	s.mu.Unlock()
 
+	if isDown && !interrupted && wait != nil {
+		if log != nil {
+			fmt.Fprintf(log, "---- %s: back in the queue; Away tries again at %s (try %d of %d)\n", down.Error(), retry, try, of)
+		}
+		return
+	}
 	if isDown && !interrupted {
 		if log != nil {
-			fmt.Fprintf(log, "---- %s: back in the queue, and Away is off until it's fixed\n", down.Error())
+			fmt.Fprintf(log, "---- %s: back in the queue, and Away is off until it's fixed\n", stoppedWhy)
 		}
-		s.notify("Away: switched off", fmt.Sprintf("%s\n%s is back in the queue. Fix it, then switch Away back on.", down.Error(), firstLine(task.Text, 80)))
+		s.notify("Away: switched off", fmt.Sprintf("%s\n%s is back in the queue. Fix it, then switch Away back on.", stoppedWhy, firstLine(task.Text, 80)))
 		return
 	}
 	if interrupted {
@@ -140,7 +174,11 @@ func (s *Service) modelAnswers(ctx context.Context) bool {
 }
 
 // modelDown: the local model (or its runner) can't be used, so nothing can be.
-type modelDown struct{ msg string }
+// setup: it's set up wrong (ModelError.Setup), so waiting won't help.
+type modelDown struct {
+	msg   string
+	setup bool
+}
 
 func (e *modelDown) Error() string { return "the local model couldn't run: " + e.msg }
 
@@ -234,7 +272,7 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 			// but have <parameter>") switched Away off for the night. Ask the
 			// model something first: if it answers, only this answer broke.
 			if me.Setup || !s.modelAnswers(ctx) {
-				return "", &modelDown{me.Msg}
+				return "", &modelDown{msg: me.Msg, setup: me.Setup}
 			}
 			broke = true
 			qerr = fmt.Errorf("its answer broke off: %s", me.Msg)
@@ -255,7 +293,7 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 			case broke:
 				return "", qerr // this task's problem, not Away's: the queue goes on
 			case attempt == 1:
-				return "", &modelDown{"it didn't run: " + qerr.Error()}
+				return "", &modelDown{msg: "it didn't run: " + qerr.Error()}
 			}
 		}
 		t.Rounds = append(t.Rounds, Round{Who: "qwen", Seconds: int(time.Since(started).Seconds()), Commit: sha, Notes: errText(qerr)})

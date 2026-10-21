@@ -453,6 +453,35 @@ func TestARestartBeforeAnyCommitStartsOver(t *testing.T) {
 // A broken model isn't the task's fault: the task goes back in the queue,
 // Away switches itself off (once, with the reason), and nothing is left
 // behind or kept as an example.
+// clock: a fake s.now the test moves on, safe to read from the runner.
+type clock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *clock) now() time.Time      { c.mu.Lock(); defer c.mu.Unlock(); return c.t }
+func (c *clock) add(d time.Duration) { c.mu.Lock(); c.t = c.t.Add(d); c.mu.Unlock() }
+
+// settle steps the queue until nothing is running and the model has been
+// asked n times in all.
+func settle(t *testing.T, s *Service, steps *fakeSteps, n int) {
+	t.Helper()
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		s.step(context.Background())
+		steps.mu.Lock()
+		asked := len(steps.prompts)
+		steps.mu.Unlock()
+		if asked >= n && s.View().Running == "" {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("the model was never asked %d times: %+v", n, s.View())
+}
+
+// A model that still doesn't answer after about half an hour of tries
+// switches Away off, once, with one notification.
 func TestABrokenModelSwitchesAwayOff(t *testing.T) {
 	for name, err := range map[string]error{
 		"model error":   &ModelError{Msg: "Ollama: HTTP 500 llama-server binary not found"},
@@ -461,32 +490,37 @@ func TestABrokenModelSwitchesAwayOff(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			steps := &fakeSteps{qwen: func(dir, task string) error { return err }}
 			s, repo, _ := setup(t, steps)
+			c := &clock{t: time.Date(2026, 10, 21, 10, 12, 0, 0, time.Local)}
+			s.now = c.now
 			var mu sync.Mutex
 			var notes []string
 			s.notify = func(title, body string) { mu.Lock(); notes = append(notes, title+": "+body); mu.Unlock() }
 			first, _ := s.Add("proj", "first")
 			second, _ := s.Add("proj", "second")
 			s.SetMode(ModeOn)
-			deadline := time.Now().Add(20 * time.Second)
-			for s.View().Mode != ModeOff && time.Now().Before(deadline) {
-				s.step(context.Background())
-				time.Sleep(20 * time.Millisecond)
+			for try := 1; try < modelTries; try++ {
+				settle(t, s, steps, try)
+				if v := s.View(); v.Mode != ModeOn || v.Waiting == nil || v.Waiting.Tries != try {
+					t.Fatalf("try %d: %q %+v", try, v.Mode, v.Waiting)
+				}
+				c.add(modelWait)
 			}
+			settle(t, s, steps, modelTries)
 			for range 5 { // a second task would (wrongly) start here
 				s.step(context.Background())
 				time.Sleep(20 * time.Millisecond)
 			}
 			v := s.View()
-			if v.Mode != ModeOff || !strings.Contains(v.Stopped, "the local model couldn't run") {
-				t.Fatalf("Away didn't switch itself off: %q %q", v.Mode, v.Stopped)
+			if v.Mode != ModeOff || !strings.Contains(v.Stopped, "the local model couldn't run") || !strings.Contains(v.Stopped, "4 tries over 30 min") || v.Waiting != nil {
+				t.Fatalf("Away didn't switch itself off: %q %q %+v", v.Mode, v.Stopped, v.Waiting)
 			}
 			for _, x := range v.Tasks {
 				if (x.ID == first.ID || x.ID == second.ID) && (x.Status != StatusQueued || x.Branch != "" || len(x.Rounds) != 0) {
 					t.Fatalf("%+v", x)
 				}
 			}
-			if len(steps.prompts) != 1 {
-				t.Fatalf("kept going after the model failed: %d runs", len(steps.prompts))
+			if len(steps.prompts) != modelTries || steps.prompts[modelTries-1] != "first" {
+				t.Fatalf("kept going after the model failed: %q", steps.prompts)
 			}
 			mu.Lock()
 			if len(notes) != 1 || !strings.Contains(notes[0], "switched off") {
@@ -504,6 +538,90 @@ func TestABrokenModelSwitchesAwayOff(t *testing.T) {
 				t.Fatal("the reason outlived switching it back on")
 			}
 		})
+	}
+}
+
+// 10-21: the PC was switched on and Away started a task while Ollama was
+// still installing an update. Away waits (mode as it was), tries again, and
+// carries on.
+func TestAModelThatDoesntAnswerPausesAway(t *testing.T) {
+	var down sync.Mutex
+	broken := true
+	steps := &fakeSteps{reviews: []string{`{"verdict":"pass","notes":"ok"}`}}
+	steps.qwen = func(dir, task string) error {
+		down.Lock()
+		defer down.Unlock()
+		if broken {
+			return &ModelError{Msg: "fetch failed"}
+		}
+		return os.WriteFile(filepath.Join(dir, "out.txt"), []byte("done\n"), 0o644)
+	}
+	s, _, _ := setup(t, steps)
+	c := &clock{t: time.Date(2026, 10, 21, 10, 12, 0, 0, time.Local)}
+	s.now = c.now
+	s.generate = func(ctx context.Context, prompt string) (string, error) {
+		down.Lock()
+		defer down.Unlock()
+		if broken {
+			return "", fmt.Errorf("fetch failed")
+		}
+		return "OK", nil
+	}
+	notified := 0
+	s.notify = func(title, body string) { notified++ }
+	task, _ := s.Add("proj", "write out.txt")
+	s.SetMode(ModeIdle)
+	s.SetMode(ModeOn)
+	settle(t, s, steps, 1)
+
+	v := s.View()
+	w := v.Waiting
+	if v.Mode != ModeOn || v.Stopped != "" || w == nil || w.Tries != 1 || w.Max != modelTries || !w.Retry.Equal(c.now().Add(modelWait)) || !strings.Contains(w.Reason, "fetch failed") {
+		t.Fatalf("%q %q %+v", v.Mode, v.Stopped, w)
+	}
+	if v.Tasks[0].Status != StatusQueued || notified != 0 {
+		t.Fatalf("%+v, %d notifications", v.Tasks[0], notified)
+	}
+	c.add(modelWait - time.Second)
+	for range 5 { // too soon: nothing starts
+		s.step(context.Background())
+		time.Sleep(20 * time.Millisecond)
+	}
+	if len(steps.prompts) != 1 {
+		t.Fatalf("tried again before the wait was up: %d runs", len(steps.prompts))
+	}
+
+	down.Lock()
+	broken = false // Ollama finished updating
+	down.Unlock()
+	c.add(time.Second)
+	if got := waitFor(t, s, task.ID, finished); got.Status != StatusDone {
+		t.Fatalf("%+v", got)
+	}
+	if v := s.View(); v.Mode != ModeOn || v.Waiting != nil || v.Stopped != "" {
+		t.Fatalf("%q %q %+v", v.Mode, v.Stopped, v.Waiting)
+	}
+}
+
+// Setting the mode yourself during the wait means "try now".
+func TestSettingTheModeEndsTheWait(t *testing.T) {
+	steps := &fakeSteps{qwen: func(dir, task string) error { return &ModelError{Msg: "fetch failed"} }}
+	s, _, _ := setup(t, steps)
+	c := &clock{t: time.Date(2026, 10, 21, 10, 12, 0, 0, time.Local)}
+	s.now = c.now
+	s.Add("proj", "anything")
+	s.SetMode(ModeOn)
+	settle(t, s, steps, 1)
+	if s.View().Waiting == nil {
+		t.Fatal("Away isn't waiting")
+	}
+	s.SetMode(ModeOn)
+	if s.View().Waiting != nil {
+		t.Fatal("still waiting")
+	}
+	settle(t, s, steps, 2)
+	if w := s.View().Waiting; w == nil || w.Tries != 1 {
+		t.Fatalf("the count didn't start over: %+v", w)
 	}
 }
 
@@ -994,8 +1112,8 @@ func TestASetupProblemStillStopsAway(t *testing.T) {
 		s.step(context.Background())
 		time.Sleep(20 * time.Millisecond)
 	}
-	if s.View().Mode != ModeOff || asked {
-		t.Fatalf("mode %q, asked the model: %v", s.View().Mode, asked)
+	if v := s.View(); v.Mode != ModeOff || v.Waiting != nil || asked || len(steps.prompts) != 1 {
+		t.Fatalf("mode %q, waiting %+v, asked the model: %v, %d runs", v.Mode, v.Waiting, asked, len(steps.prompts))
 	}
 }
 

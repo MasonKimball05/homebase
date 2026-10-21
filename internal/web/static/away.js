@@ -32,6 +32,7 @@ function duration(s) {
   return `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`;
 }
 const ago = (iso) => `${duration((Date.now() - Date.parse(iso)) / 1000)} ago`;
+const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
 const STATUS = {
   queued: "queued", running: "working", done: "ready to review", "needs-you": "needs you",
@@ -44,8 +45,10 @@ const WHO = { qwen: "Local model", tests: "Its tests", check: "Quick check", mut
 function renderMode(v) {
   for (const b of document.querySelectorAll("[data-mode]")) b.setAttribute("aria-checked", String(b.dataset.mode === v.mode));
   const idle = v.idleSeconds === null ? null : duration(v.idleSeconds);
+  const w = v.waiting;
   el("mode-note").textContent =
     v.stopped ? `Switched itself off: ${v.stopped}. Tasks wait in the queue; fix it, then switch Away back on.`
+    : w ? `The local model didn't answer at ${clock(w.at)} (${w.reason}); ${Date.parse(w.retry) > Date.now() ? `trying again at ${clock(w.retry)}` : "trying again now"}, try ${w.tries + 1} of ${w.max}. Tasks wait in the queue; setting the mode tries now.`
     : v.mode === "off" ? "Paused. Tasks wait in the queue."
     : v.mode === "on" ? "Working through the queue now, even if someone is at the PC."
     : idle === null ? `Waiting for the PC to be idle ${v.idleMinutes} min, but the idle reporter isn't running there (homebase -idle-report), so it won't start.`
