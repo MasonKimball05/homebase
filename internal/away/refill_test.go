@@ -18,6 +18,7 @@ type refillSteps struct {
 	tests   string // the file Claude writes, at tests/test_calc_auto.py
 	cases   []string
 	prompts []string
+	deletes bool // proves the tests, then deletes the file
 }
 
 func (r *refillSteps) Claude(ctx context.Context, dir, prompt string, edit bool, log *os.File) (string, error) {
@@ -25,6 +26,11 @@ func (r *refillSteps) Claude(ctx context.Context, dir, prompt string, edit bool,
 		return r.realTests.fakeSteps.Claude(ctx, dir, prompt, edit, log)
 	}
 	r.prompts = append(r.prompts, prompt)
+	if r.deletes {
+		// 10-23: it proved the tests, then deleted them "so the model starts from nothing".
+		b, _ := json.Marshal(map[string]any{"verdict": "ok", "test_file": "tests/test_calc_auto.py", "db": false, "cases": r.cases})
+		return "Passed, then removed the file.\n" + string(b), nil
+	}
 	os.WriteFile(filepath.Join(dir, "tests", "test_calc_auto.py"), []byte(r.tests), 0o644)
 	b, _ := json.Marshal(map[string]any{"verdict": "ok", "test_file": "tests/test_calc_auto.py", "db": false, "cases": r.cases, "setup": "Import too_short and MIN_LENGTH from pkg.calc."})
 	return "Done.\n" + string(b), nil
@@ -226,5 +232,44 @@ func TestLastJSON(t *testing.T) {
 	}
 	if lastJSON("no json") != "" {
 		t.Fatal("found json in none")
+	}
+}
+
+// Claude deleting the file it was asked to write queues nothing, and one
+// refill gives up after fillTries functions instead of trying them all.
+func TestRefillGivesUpAfterAFewTries(t *testing.T) {
+	steps := &refillSteps{realTests: realTests{&fakeSteps{}}, tests: strongTests, cases: threeCases, deletes: true}
+	s, repo := refillProject(t, steps)
+	var more strings.Builder
+	for _, name := range []string{"alpha", "beta", "gamma", "delta", "epsilon"} {
+		more.WriteString("def " + name + "(x):\n    if x:\n        return 1\n    y = 2\n    return y\n\n\n")
+	}
+	os.WriteFile(filepath.Join(repo, "pkg", "more.py"), []byte(more.String()), 0o644)
+	run(t, repo, "add", "pkg")
+	run(t, repo, "commit", "-q", "-m", "more")
+	refillOnce(t, s)
+	if n := len(steps.prompts); n != fillTries {
+		t.Fatalf("asked Claude %d times, want %d", n, fillTries)
+	}
+	if n := len(s.View().Tasks); n != 0 {
+		t.Fatalf("queued %d", n)
+	}
+	b, _ := os.ReadFile(filepath.Join(s.set.LogDir, "refill.log"))
+	if !strings.Contains(string(b), "isn't there (Claude was told to leave it)") {
+		t.Fatalf("log:\n%s", b)
+	}
+	if !strings.Contains(steps.prompts[0], "Leave the test file where it is") {
+		t.Fatal("the prompt doesn't say to keep the file")
+	}
+}
+
+// A refill cancelled midway (back at the PC) doesn't use the function up.
+func TestAnInterruptedRefillCanTryTheSameFunctionAgain(t *testing.T) {
+	steps := &refillSteps{realTests: realTests{&fakeSteps{}}, tests: strongTests, cases: threeCases}
+	s, _ := refillProject(t, steps)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if id := s.makeTestsTask(ctx, "proj", nil); id != "" || s.tried("tests:pkg/calc.py:too_short") {
+		t.Fatalf("id %q, tried %v", id, s.tried("tests:pkg/calc.py:too_short"))
 	}
 }

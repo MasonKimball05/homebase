@@ -45,6 +45,9 @@ const (
 	refillPause   = 30 * time.Minute        // after a refill that found nothing to queue
 	drillEvery    = 3                       // every third automatic task is a drill
 	drillTries    = 5                       // mutants tried per function
+	// fillTries: Claude attempts per refill. 10-23: one bad answer pattern
+	// (deleting the file it was asked to write) failed every function in turn.
+	fillTries = 3
 )
 
 var newTestFile = regexp.MustCompile(`in a new file ([\w./-]+\.py)\b`)
@@ -169,17 +172,23 @@ func (s *Service) makeTestsTask(ctx context.Context, project string, log *os.Fil
 		return ""
 	}
 	command := s.set.Tests[project]
+	tries := 0
 	for _, sg := range list {
 		key := "tests:" + sg.Path + ":" + sg.Function
 		if s.tried(key) || ctx.Err() != nil {
 			continue
 		}
-		s.markTried(key) // whatever happens, don't pick it again
-		if id := s.writeTestsTask(ctx, project, repo, command, sg, log); id != "" {
-			return id
+		if tries == fillTries {
+			break
 		}
+		tries++
+		id := s.writeTestsTask(ctx, project, repo, command, sg, log)
 		if ctx.Err() != nil {
-			return ""
+			return "" // interrupted (back at the PC): this function gets another go later
+		}
+		s.markTried(key) // done with, either way: don't pick it again
+		if id != "" {
+			return id
 		}
 	}
 	return ""
@@ -226,6 +235,9 @@ func (s *Service) writeTestsTask(ctx context.Context, project, repo, command str
 	}
 	key, err := os.ReadFile(filepath.Join(wt, filepath.FromSlash(testRel)))
 	if err != nil {
+		if log != nil {
+			fmt.Fprintf(log, "---- not queued: %s isn't there (Claude was told to leave it)\n", testRel)
+		}
 		return ""
 	}
 	// Claude says they pass; Away checks: they pass, and there's one per case.
@@ -261,6 +273,7 @@ func fillPrompt(sg Suggestion, command string, areas []string) string {
 - Read %s and what it uses first. Cover 4 to 7 cases, one test each, chosen to catch real mistakes: boundaries, each branch, permissions for a view (who may, who may not, logged out), what must not change.
 - Every expected value must be what the code actually does: run the file with `+"`%s <module or path>`"+` until it passes. If the code looks wrong somewhere, test what it does and say so in "why".
 - Use the code's own names for constants, and the project's usual helpers and models; look at a neighbouring test for how users and objects are made.
+- Leave the test file where it is when you're done: Away runs it again itself to check it, keeps it as the answer key, and then removes this whole worktree. Deleting it wastes the work.
 - If %s can't sensibly be tested this way (it needs the network, a real file upload, a missing template, too much setup), don't write anything: answer skip.
 
 End your reply with exactly one line of JSON and nothing after it:
