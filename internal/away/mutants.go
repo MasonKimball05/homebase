@@ -22,6 +22,7 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -29,8 +30,13 @@ import (
 var mutantsPy []byte
 
 var (
-	underTest  = regexp.MustCompile(`(?i)\btests for (\w+) in ([\w./-]+\.py)\b`)
-	testLine   = regexp.MustCompile(`^(test\w*) \(`)
+	underTest = regexp.MustCompile(`(?i)\btests for (\w+) in ([\w./-]+\.py)\b`)
+	// A test's name, anywhere in the line: Django prints the names and the
+	// results on different streams, and merged, a name can land mid-line
+	// (10-23: five of six tests found, three refills in a row turned down).
+	testLine   = regexp.MustCompile(`\(([\w.]+)\.(test\w*)\)`) // the name as unittest qualifies it: (module.Class.test_x)
+	oldLine    = regexp.MustCompile(`^(test\w*) \(`)           // before Python 3.11: "test_x (module.Class)"
+	ranLine    = regexp.MustCompile(`(?m)^Ran (\d+) tests? in `)
 	testStatus = regexp.MustCompile(`\.\.\. (ok|FAIL|ERROR|skipped|expected failure|unexpected success)`)
 )
 
@@ -60,7 +66,9 @@ func testResults(out string) map[string]bool {
 	res := map[string]bool{}
 	name := ""
 	for _, l := range strings.Split(strings.ReplaceAll(out, "\r\n", "\n"), "\n") {
-		if m := testLine.FindStringSubmatch(l); m != nil {
+		if ms := testLine.FindAllStringSubmatch(l, -1); ms != nil {
+			name = ms[len(ms)-1][2]
+		} else if m := oldLine.FindStringSubmatch(l); m != nil {
 			name = m[1]
 		}
 		if m := testStatus.FindStringSubmatch(l); m != nil && name != "" {
@@ -175,6 +183,17 @@ func mutantCommand(py, verb, rel, fn string, id int) string {
 		line += fmt.Sprintf(" %d", id)
 	}
 	return line
+}
+
+// ranCount: how many tests the runner says it ran ("Ran 6 tests in 4.0s"),
+// or -1. Surer than counting the names, which can be split across lines.
+func ranCount(out string) int {
+	m := ranLine.FindAllStringSubmatch(out, -1)
+	if m == nil {
+		return -1
+	}
+	n, _ := strconv.Atoi(m[len(m)-1][1])
+	return n
 }
 
 // lastLineWith: the last line of out that starts with prefix (the script's

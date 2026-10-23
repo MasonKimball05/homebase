@@ -246,7 +246,11 @@ func (s *Service) writeTestsTask(ctx context.Context, project, repo, command str
 		return ""
 	}
 	passed, out := s.steps.Tests(ctx, wt, verbose(command)+" "+targets[0], log)
-	if n := len(testResults(out)); !passed || n != len(ans.Cases) {
+	n := ranCount(out)
+	if n < 0 {
+		n = len(testResults(out))
+	}
+	if !passed || n != len(ans.Cases) {
 		if log != nil {
 			fmt.Fprintf(log, "---- not queued: passed=%v, %d tests for %d cases\n", passed, n, len(ans.Cases))
 		}

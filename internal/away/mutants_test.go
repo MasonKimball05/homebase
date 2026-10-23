@@ -115,10 +115,21 @@ func TestMutationCheckSkipsWhatItCantCheck(t *testing.T) {
 }
 
 func TestTestResults(t *testing.T) {
-	out := "test_a (tests.test_x.T.test_a) ... ok\ntest_b (tests.test_x.T.test_b)\nThe docstring. ... FAIL\r\ntest_c (tests.test_x.T.test_c) ... ERROR\n"
+	// The last line: 10-23's merged streams put a test's name after other output.
+	out := "test_a (tests.test_x.T.test_a) ... ok\ntest_b (tests.test_x.T.test_b)\nThe docstring. ... FAIL\r\ntest_c (tests.test_x.T.test_c) ... ERROR\n" +
+		"  Applying src.0099_x... OKtest_d (tests.test_x.T.test_d) ... ok\n"
 	got := testResults(out)
-	if len(got) != 3 || !got["test_a"] || got["test_b"] || got["test_c"] {
+	if len(got) != 4 || !got["test_a"] || got["test_b"] || got["test_c"] || !got["test_d"] {
 		t.Fatalf("%v", got)
+	}
+	if got := testResults("test_e (tests.test_x.T) ... ok\n"); !got["test_e"] {
+		t.Fatalf("Python before 3.11: %v", got)
+	}
+	if n := ranCount("noise\nRan 1 test in 0.1s\n\nRan 6 tests in 4.018s\nOK\n"); n != 6 {
+		t.Fatal(n)
+	}
+	if ranCount("nothing ran") != -1 {
+		t.Fatal("found a count in none")
 	}
 }
 
