@@ -268,7 +268,7 @@ func run(configPath string) error {
 			svc := away.New(away.Settings{
 				Runner: cfg.Away.Runner, Worktrees: cfg.Away.Worktrees, Claude: claude, Ollama: ollama, Model: model,
 				IdleMinutes: cfg.Away.IdleMinutes, Rounds: cfg.Away.Rounds, Push: cfg.Away.Push, Tests: cfg.Away.Tests,
-				StatePath: filepath.Join(dir, "away.json"), ExamplesDir: filepath.Join(dir, "away-examples"), EmbedModel: embedModel, RecallHoldout: holdout, IdlePath: filepath.Join(dir, "away-idle.json"), LogDir: logDir,
+				StatePath: filepath.Join(dir, "away.json"), ExamplesDir: filepath.Join(dir, "away-examples"), EmbedModel: embedModel, RecallHoldout: holdout, Autofill: cfg.Away.Autofill, IdlePath: filepath.Join(dir, "away-idle.json"), LogDir: logDir,
 			}, browser, steps, notify, logf)
 			go svc.Run(ctx)
 			dash = dash.WithAway(svc)

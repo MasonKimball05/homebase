@@ -21,6 +21,7 @@
     "idle_minutes": 20,
     "rounds": 2,
     "push": ["Parliament-Dev"],
+    "autofill": { "Parliament-Dev": 8 },
     "tests": {
       "Parliament-Dev": "python manage.py test --noinput",
       "Skirmish": "powershell -NoProfile -ExecutionPolicy Bypass -File C:/Users/Admin/projects/homebase/scripts/godot-test.ps1"

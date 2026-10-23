@@ -228,6 +228,28 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 	}
 	local := linkDeps(repo, wt, log)
 
+	// A drill (refill.go): plant the bug as a commit of its own, and count
+	// the attempt from there, so the diff and the review show only the fix.
+	if d := t.Drill; d != nil {
+		stage("planting the bug")
+		py, err := s.mutantsCommand()
+		if err != nil {
+			return "", err
+		}
+		if ok, out := s.steps.Tests(ctx, wt, mutantCommand(py, "apply", d.File, d.Function, d.Mutant), log); !ok {
+			return "", fmt.Errorf("couldn't plant the drill's bug: %s", tailText(out, 300))
+		}
+		if _, n, err := commitAll(ctx, wt, "Away drill: a bug planted in "+d.Function, local, t.BaseCommit); err != nil || n == 0 {
+			return "", fmt.Errorf("couldn't commit the drill's bug: %v", err)
+		}
+		head, err := git(ctx, wt, "rev-parse", "HEAD")
+		if err != nil {
+			return "", err
+		}
+		t.BaseCommit = strings.TrimSpace(head)
+		s.update(t.ID, func(x *Task) { x.BaseCommit = t.BaseCommit })
+	}
+
 	// How similar tasks went before (recall.go), shown with the task in every round.
 	stage("looking for similar past tasks")
 	var examples string
@@ -302,7 +324,11 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 		// Claude's fix), without spending a review on it.
 		ran := ""
 		if base := s.set.Tests[t.Project]; base != "" {
-			if targets := testTargets(base, changedTestFiles(ctx, wt, t.BaseCommit)); len(targets) > 0 {
+			targets := testTargets(base, changedTestFiles(ctx, wt, t.BaseCommit))
+			if t.Drill != nil {
+				targets = []string{t.Drill.Target} // the tests the bug broke, which it mustn't change
+			}
+			if len(targets) > 0 {
 				line := base + " " + strings.Join(targets, " ")
 				stage(fmt.Sprintf("running its tests, round %d", round))
 				started = time.Now()
@@ -322,7 +348,7 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 
 		// A quick look for what the task named and the code's constants
 		// (check.go), before spending a review. It doesn't use up a round.
-		if !checked {
+		if !checked && t.Drill == nil {
 			if diff, err := git(ctx, wt, "diff", t.BaseCommit+"..HEAD"); err == nil {
 				if found := preReview(t.Text, diff, wt); found != "" {
 					checked = true
@@ -487,6 +513,7 @@ func reviewPrompt(t Task, testsPassed, testCommand, mutantNotes string) string {
 	if testsPassed != "" {
 		ran = " Away already ran `" + testsPassed + "` on this branch and it passed, so judge the tests' quality and coverage rather than whether they run."
 	}
+	ran += drillNote(t)
 	if mutantNotes != "" {
 		ran += "\n\nBefore this review, Away's mutation check (the code under test broken on purpose, one change at a time) sent the work back once with these notes. Check whether the tests now catch each change a listed case covers, or whether the model's reply rightly says no listed case covers it:\n\n<mutation-check>\n" + mutantNotes + "\n</mutation-check>"
 	}
@@ -507,6 +534,14 @@ End your reply with exactly one line of JSON and nothing after it:
 - fail: the task is impossible, unclear or a bad idea as written. notes explain why, for the owner.`, t.Branch, t.Text, t.BaseCommit, testHint(testCommand), ran)
 }
 
+// drillNote: for a drill, what the review needs to know and the model wasn't told.
+func drillNote(t Task) string {
+	if t.Drill == nil {
+		return ""
+	}
+	return fmt.Sprintf("\n\nThis task is a drill: before the model started, Away planted this bug on purpose (its commit is the base of the diff): %s, in %s in %s. The right fix undoes it, or fixes it in an equivalent way. Changing any test, or anything outside %s, is wrong.", t.Drill.What, t.Drill.Function, t.Drill.File, t.Drill.File)
+}
+
 func fixPrompt(t Task, notes, testCommand string) string {
 	return fmt.Sprintf(`A local model worked on this task unattended on branch %s and its attempts didn't pass review. The task:
 
@@ -524,7 +559,7 @@ See what's there with `+"`git diff %s...HEAD`"+`. Finish the task yourself: edit
 End your reply with exactly one line of JSON and nothing after it:
 {"verdict": "fixed" | "fail", "notes": "..."}
 - fixed: notes summarize the final change for the owner.
-- fail: the task can't be done as written; notes explain why.`, t.Branch, t.Text, notes, t.BaseCommit, testHint(testCommand))
+- fail: the task can't be done as written; notes explain why.`, t.Branch, t.Text+drillNote(t), notes, t.BaseCommit, testHint(testCommand))
 }
 
 var verdictLine = regexp.MustCompile(`\{[^{}]*"verdict"[^{}]*\}`)

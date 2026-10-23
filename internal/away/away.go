@@ -74,7 +74,12 @@ type Task struct {
 	// Shown: the examples (recall.go) the local model was shown for this attempt.
 	Shown []string `json:"shown,omitempty"`
 	// HeldOut: this attempt ran without examples on purpose (RecallHoldout).
-	HeldOut  bool      `json:"heldOut,omitempty"`
+	HeldOut bool `json:"heldOut,omitempty"`
+	// Auto: queued by Away itself (refill.go), "tests" or "drill"; "" when
+	// someone added it.
+	Auto string `json:"auto,omitempty"`
+	// Drill: the bug planted for a drill (run.go plants it, the review is told).
+	Drill    *Drill    `json:"drill,omitempty"`
 	Created  time.Time `json:"created"`
 	Started  time.Time `json:"started,omitzero"`
 	Finished time.Time `json:"finished,omitzero"`
@@ -98,6 +103,10 @@ type Settings struct {
 	RecallHoldout int
 	IdlePath      string // written by `homebase -idle-report`
 	LogDir        string // one log per task
+	// Autofill: projects Away may queue work for itself when the queue is
+	// empty, and how many such tasks a day (refill.go). Python test
+	// commands only.
+	Autofill map[string]int
 }
 
 // Projects finds a project's folder by id (internal/projects).
@@ -127,6 +136,9 @@ type state struct {
 	// or someone sets the mode again.
 	Waiting *Wait   `json:"waiting,omitempty"`
 	Tasks   []*Task `json:"tasks"`
+	// Tried: functions an automatic refill already used or gave up on
+	// (refill.go), so it doesn't pick them again.
+	Tried []string `json:"tried,omitempty"`
 }
 
 // Wait: the local model didn't answer (10-21: Ollama not ready yet, still
@@ -162,8 +174,10 @@ type Service struct {
 	st      state
 	cancel  context.CancelFunc // the running task's
 	running string
-	byIdle  bool          // the running task was started by idle mode (so activity stops it)
-	wake    chan struct{} // something changed: look at the queue now
+	byIdle  bool // the running task was started by idle mode (so activity stops it)
+	// refillAfter: a refill that found nothing to queue waits until then.
+	refillAfter time.Time
+	wake        chan struct{} // something changed: look at the queue now
 }
 
 func New(set Settings, projects Projects, steps Steps, notify func(title, body string), logf func(string, ...any)) *Service {
@@ -271,6 +285,12 @@ func (s *Service) step(ctx context.Context) {
 		}
 	}
 	if next == nil {
+		// Nothing queued: maybe Away can queue something itself (refill.go).
+		if p := s.refillProject(); p != "" {
+			tctx, cancel := context.WithCancel(ctx)
+			s.cancel, s.running, s.byIdle = cancel, refillRunning, s.st.Mode == ModeIdle
+			go s.refill(tctx, p)
+		}
 		return
 	}
 	tctx, cancel := context.WithCancel(ctx)
@@ -434,7 +454,11 @@ func (s *Service) Act(ctx context.Context, id, action string) error {
 			return errors.New("only a finished task can be accepted")
 		}
 		removeWorktree(ctx, repo, s.worktree(task)) // a leftover worktree would keep the branch from being deleted
-		if err := accept(ctx, repo, task); err != nil {
+		if task.Drill != nil {
+			// A drill's branch is the planted bug and its fix: nothing to merge.
+			// Accepting it says the fix was right (the example counts).
+			dropBranch(ctx, repo, s.worktree(task), task.Branch)
+		} else if err := accept(ctx, repo, task); err != nil {
 			return err
 		}
 		s.unpush(ctx, repo, task)

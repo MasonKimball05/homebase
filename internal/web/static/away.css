@@ -41,6 +41,7 @@
 .status[data-s="running"] { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
 .status[data-s="done"], .status[data-s="accepted"] { color: var(--ok); background: color-mix(in srgb, var(--ok) 15%, transparent); }
 .status[data-s="needs-you"] { color: var(--warn); background: color-mix(in srgb, var(--warn) 15%, transparent); }
+.status.auto { color: var(--muted); background: transparent; border: 1px dashed var(--border); }
 .status[data-s="failed"] { color: var(--bad); background: color-mix(in srgb, var(--bad) 15%, transparent); }
 
 .rounds { margin: 6px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--muted); }

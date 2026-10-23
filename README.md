@@ -355,6 +355,19 @@ Along the way it learns from its own history (`internal/away`):
   away. An error in one answer (10-20: a garbled tool call) first gets a
   one-line question to the model: if it answers, only that answer broke, so
   the round gets one more go and, failing that, just that task fails.
+- **It refills its own queue** (`refill.go`, `"autofill": {"Parliament-Dev": 8}`
+  = up to 8 a day): when the queue is empty and Away may work, it makes a
+  task itself, in a scratch worktree that's removed afterwards. Usually a
+  tests task: a suggested function nobody has tried, Claude writes the tests
+  and lists the cases, and Away runs them itself, queueing the task only when
+  they pass with one test per case (Claude's file is kept in
+  `away-examples/<project>/answers/` as the answer key). Every third one is a
+  **drill**: a function whose accepted tests are merged gets one of its
+  mutants (`mutants.py`) that those tests catch, and the task is "a bug has
+  crept in: find and fix it". The bug is planted as its own commit before the
+  model starts, the review is told what it was, and Accept merges nothing
+  (the bug and its fix cancel out); the example still counts. A refill that
+  finds nothing waits 30 minutes. Automatic tasks are marked on the Away page.
 - **Suggested tasks** (`suggest.go`): Python functions no test mentions; the
   local model drafts the cases to test, for you to check and add.
 

@@ -49,6 +49,7 @@ function renderMode(v) {
   el("mode-note").textContent =
     v.stopped ? `Switched itself off: ${v.stopped}. Tasks wait in the queue; fix it, then switch Away back on.`
     : w ? `The local model didn't answer at ${clock(w.at)} (${w.reason}); ${Date.parse(w.retry) > Date.now() ? `trying again at ${clock(w.retry)}` : "trying again now"}, try ${w.tries + 1} of ${w.max}. Tasks wait in the queue; setting the mode tries now.`
+    : v.running === "(refilling the queue)" ? "The queue was empty, so Away is preparing a task itself: Claude writes and checks one, or Away plants a bug for a drill."
     : v.mode === "off" ? "Paused. Tasks wait in the queue."
     : v.mode === "on" ? "Working through the queue now, even if someone is at the PC."
     : idle === null ? `Waiting for the PC to be idle ${v.idleMinutes} min, but the idle reporter isn't running there (homebase -idle-report), so it won't start.`
@@ -144,6 +145,7 @@ function renderTask(t) {
   const st = make("span", t.status === "running" && t.stage ? t.stage : STATUS[t.status] || t.status, "status");
   st.dataset.s = t.status;
   head.append(st);
+  if (t.auto) head.append(make("span", t.auto === "drill" ? "drill (bug planted by Away)" : "queued by Away", "status auto"));
   if (t.verdict === "fixed") head.append(make("span", "Claude finished it", "muted small"));
   if (t.branch) head.append(make("span", t.branch + (t.pushed ? " (pushed)" : ""), "branch-name muted"));
   head.append(make("span", when(t), "task-when muted small"));

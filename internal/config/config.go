@@ -71,6 +71,11 @@ type Away struct {
 	// RecallHoldout: every Nth task runs without earlier examples on purpose,
 	// so the Track record can compare fairly. Default 3; -1 never.
 	RecallHoldout int `json:"recall_holdout,omitempty"`
+	// Autofill: projects Away may queue work for itself when its queue is
+	// empty (Claude writes and proves a tests task, or Away plants a bug for
+	// a drill), and how many a day, e.g. {"Parliament-Dev": 10}. Python test
+	// commands only.
+	Autofill map[string]int `json:"autofill,omitempty"`
 }
 
 // Projects lists the folders whose git repos the Projects page shows.
