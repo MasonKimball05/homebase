@@ -562,18 +562,25 @@ End your reply with exactly one line of JSON and nothing after it:
 - fail: the task can't be done as written; notes explain why.`, t.Branch, t.Text+drillNote(t), notes, t.BaseCommit, testHint(testCommand))
 }
 
-var verdictLine = regexp.MustCompile(`\{[^{}]*"verdict"[^{}]*\}`)
-
 // parseVerdict finds the last {"verdict": …, "notes": …} in Claude's reply.
 // No verdict at all counts as "revise" with the whole reply as notes.
+//
+// It decodes from each "{" backwards with a real JSON decoder. A pattern
+// without braces inside missed verdicts whose notes quoted code: on 10-23 a
+// drill's review said "Pass" about `json={'bot': {...}}` and was read as
+// "revise", so Claude redid work the local model had got right.
 func parseVerdict(reply string) (string, string) {
-	all := verdictLine.FindAllString(reply, -1)
-	for i := len(all) - 1; i >= 0; i-- {
+	for end := len(reply); end > 0; {
+		i := strings.LastIndex(reply[:end], "{")
+		if i < 0 {
+			break
+		}
+		end = i
 		var v struct {
 			Verdict string `json:"verdict"`
 			Notes   string `json:"notes"`
 		}
-		if json.Unmarshal([]byte(all[i]), &v) == nil {
+		if json.NewDecoder(strings.NewReader(reply[i:])).Decode(&v) == nil {
 			switch v.Verdict {
 			case "pass", "revise", "fail", "fixed":
 				return v.Verdict, strings.TrimSpace(v.Notes)

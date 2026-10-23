@@ -371,6 +371,9 @@ func TestParseVerdict(t *testing.T) {
 		{"{\"verdict\":\"revise\",\"notes\":\"a\"} then {\"verdict\":\"pass\",\"notes\":\"b\"}", "pass", "b"},
 		{"no json here", "revise", "no json here"},
 		{"{\"verdict\":\"maybe\"}", "revise", "{\"verdict\":\"maybe\"}"},
+		// 10-23: notes quoting code with braces.
+		{"**Pass.** Fixed it.\n{\"verdict\": \"pass\", \"notes\": \"Restored `json={'bot': {'name': name}}` and the or.\"}", "pass", "Restored `json={'bot': {'name': name}}` and the or."},
+		{"see {braces} first\n{\"verdict\": \"revise\", \"notes\": \"1. use {x}\"}\ntrailing {", "revise", "1. use {x}"},
 	}
 	for _, c := range cases {
 		v, n := parseVerdict(c.in)
