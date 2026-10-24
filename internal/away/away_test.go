@@ -215,6 +215,9 @@ func TestRevisesThenClaudeFixes(t *testing.T) {
 	if len(steps.prompts) != 2 || !strings.Contains(steps.prompts[1], "1. say hello") {
 		t.Fatalf("round 2 didn't get the notes: %q", steps.prompts)
 	}
+	if !strings.Contains(steps.prompts[1], "your changes to out.txt are committed") {
+		t.Fatalf("round 2 didn't name the file from round 1: %q", steps.prompts[1])
+	}
 	who := []string{}
 	for _, r := range got.Rounds {
 		who = append(who, r.Who)
@@ -1141,5 +1144,28 @@ func TestStrayGodotUIDsAreNotCommitted(t *testing.T) {
 	files := run(t, repo, "diff", "--name-only", "main.."+got.Branch)
 	if !strings.Contains(files, "game/tests/test_new.gd.uid") || strings.Contains(files, "debug_perk.gd.uid") {
 		t.Fatalf("branch changes:\n%s", files)
+	}
+}
+
+// 10-23: with the past examples between the task and its own notes, Qwen
+// took the notes for another task's, and rewrote the file it had written.
+func TestQwenPromptPutsItsOwnNotesFirst(t *testing.T) {
+	examples := "\n\n---\n\n## How similar tasks went before in this project\n\nThe reviewer's notes on it: other task"
+	if got := qwenPrompt("the task", examples, "", nil); got != "the task"+examples {
+		t.Fatalf("first round: %q", got)
+	}
+	got := qwenPrompt("the task", examples, "test the cache", []string{"src/tests/test_a.py"})
+	task, mine, theirs := strings.Index(got, "the task"), strings.Index(got, "test the cache"), strings.Index(got, "How similar")
+	if !(task == 0 && task < mine && mine < theirs) {
+		t.Fatalf("order: task %d, its notes %d, examples %d:\n%s", task, mine, theirs, got)
+	}
+	if !strings.Contains(got, "your changes to src/tests/test_a.py are committed") || !strings.Contains(got, "Don't start over") {
+		t.Fatalf("doesn't name the file: %s", got)
+	}
+	if !strings.Contains(got, "about other tasks, for reference only") {
+		t.Fatalf("doesn't mark the examples as other tasks': %s", got)
+	}
+	if got := qwenPrompt("the task", "", "notes", nil); strings.Contains(got, "other tasks") || !strings.Contains(got, "changed no files") {
+		t.Fatalf("no examples, no files: %s", got)
 	}
 }

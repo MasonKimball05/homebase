@@ -277,10 +277,11 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 		attempt++
 		stage(fmt.Sprintf("local model, round %d of %d", round, s.set.Rounds))
 		started := time.Now()
-		prompt := t.Text + examples
+		var files []string
 		if notes != "" {
-			prompt += "\n\nYour previous attempt is already committed on this branch. It was sent back with these notes; act on them:\n\n" + notes
+			files = changedFiles(ctx, wt, t.BaseCommit)
 		}
+		prompt := qwenPrompt(t.Text, examples, notes, files)
 		transcript := filepath.Join(s.set.LogDir, fmt.Sprintf("%s.round%d.qwen.json", t.ID, attempt))
 		rec.transcripts[len(t.Rounds)] = transcript // the qwen round about to be added
 		qerr := s.steps.Qwen(ctx, wt, prompt, s.set.Tests[t.Project], transcript, log)
@@ -444,17 +445,48 @@ var testFile = regexp.MustCompile(`(^|/)(test_[^/]*\.(py|gd)|[^/]*_test\.(py|go)
 
 // changedTestFiles: test files changed on the branch so far.
 func changedTestFiles(ctx context.Context, wt, base string) []string {
-	out, err := git(ctx, wt, "diff", "--name-only", "--diff-filter=AMR", base+"..HEAD")
-	if err != nil {
-		return nil
-	}
 	var files []string
-	for _, f := range strings.Fields(out) {
+	for _, f := range changedFiles(ctx, wt, base) {
 		if testFile.MatchString(f) {
 			files = append(files, f)
 		}
 	}
 	return files
+}
+
+// changedFiles: the files added or changed on the branch since base.
+func changedFiles(ctx context.Context, wt, base string) []string {
+	out, err := git(ctx, wt, "diff", "--name-only", "--diff-filter=AMR", base+"..HEAD")
+	if err != nil {
+		return nil
+	}
+	return strings.Fields(out)
+}
+
+// qwenPrompt: what the local model is given in a round. After the first,
+// the notes on its last attempt come right after the task and name the files
+// it already wrote: on 10-23, with the past examples in between, it took
+// the notes for "feedback from the similar task", and found its own test file
+// with "I see there's already a test file" and rewrote it from scratch.
+func qwenPrompt(task, examples, notes string, files []string) string {
+	if notes == "" {
+		return task + examples
+	}
+	var b strings.Builder
+	b.WriteString(task)
+	b.WriteString("\n\n---\n\n## Your last attempt at this task was sent back\n\n")
+	if len(files) > 0 {
+		fmt.Fprintf(&b, "You already worked on this task: your changes to %s are committed on this branch. Start from them: read them, then edit what these notes are about. Don't start over or rewrite the file from scratch.\n\n", strings.Join(files, ", "))
+	} else {
+		b.WriteString("Your last attempt is committed on this branch, but it changed no files.\n\n")
+	}
+	b.WriteString("The notes on this task, which you must act on:\n\n")
+	b.WriteString(notes)
+	if examples != "" {
+		b.WriteString("\n\nWhat follows is about other tasks, for reference only. The notes above are the ones about this task.")
+		b.WriteString(examples)
+	}
+	return b.String()
 }
 
 // testTargets: how the project's test command names those files. Django's
