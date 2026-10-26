@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -112,29 +113,91 @@ func transcriptTools(path string) (calls, input int) {
 	return calls, t.Usage.Input
 }
 
-// narration: what the model said as it worked, each turn in order with the
-// tools it then called, for the review to grade (reasoningGrades). Long
-// turns (its summaries) are clipped; so is the whole, keeping its start and
-// end. "" when the transcript can't be read.
-func narration(path string) string {
+// transcriptItem: one item of the runner's transcript, as far as the
+// thinking measures need it.
+type transcriptItem struct {
+	Kind     string `json:"kind"`
+	Text     string `json:"text"`
+	Thinking string `json:"thinking"`
+	Label    string `json:"label"`
+	Name     string `json:"name"`
+}
+
+func transcriptItems(path string) []transcriptItem {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return ""
+		return nil
 	}
 	var t struct {
-		Items []struct {
-			Kind     string `json:"kind"`
-			Text     string `json:"text"`
-			Thinking string `json:"thinking"`
-			Label    string `json:"label"`
-			Name     string `json:"name"`
-		} `json:"items"`
+		Items []transcriptItem `json:"items"`
 	}
 	if json.Unmarshal(b, &t) != nil {
+		return nil
+	}
+	return t.Items
+}
+
+var (
+	// A reason, or something learned: "because", "the test expects", "it isn't".
+	reasonWords = regexp.MustCompile(`(?i)\b(because|since|so that|which means|means|that's why|I see|I notice|in order to|the (problem|issue|bug) is|expects?|instead of|looks like|it seems|this shows|wasn't|isn't|doesn't)\b`)
+	// Only what it'll look at next: "Now let me read the file:".
+	fillerTurn = regexp.MustCompile(`(?i)^(now )?(let me|let's|i'll|i will|i need to|now i'll|now i will|now i need to)\s+(look|read|check|run|continue|examine|search|see)\b[^.:]*[:.]?$`)
+)
+
+// summaryLen: a turn longer than this is a summary or report, not a step.
+const summaryLen = 400
+
+// thinkingStats counts how much the model explained itself (ThinkingStats);
+// nil when the transcript can't be read or has no tool calls.
+func thinkingStats(path string) *ThinkingStats {
+	items := transcriptItems(path)
+	var st ThinkingStats
+	explained, reasons, filler := 0, 0, 0
+	for i, it := range items {
+		switch it.Kind {
+		case "tool":
+			st.Calls++
+			if i > 0 && items[i-1].Kind == "assistant" && strings.TrimSpace(items[i-1].Text) != "" {
+				explained++
+			}
+		case "assistant":
+			s := oneLine(it.Text)
+			if s == "" || len(s) > summaryLen {
+				continue
+			}
+			st.Turns++
+			if reasonWords.MatchString(s) {
+				reasons++
+			}
+			if fillerTurn.MatchString(s) {
+				filler++
+			}
+		}
+	}
+	if st.Calls == 0 {
+		return nil
+	}
+	pct := func(n, of int) int {
+		if of == 0 {
+			return 0
+		}
+		return (100*n + of/2) / of
+	}
+	st.Explained, st.Reasons, st.Filler = pct(explained, st.Calls), pct(reasons, st.Turns), pct(filler, st.Turns)
+	return &st
+}
+
+// narration: what the model said as it worked, each turn in order with the
+// tools it then called, for the review to grade (reviewPrompt). Long turns
+// (its summaries) are clipped; so is the whole, keeping its start and end.
+// "" when the transcript can't be read.
+func narration(path string) string {
+	items := transcriptItems(path)
+	if items == nil {
 		return ""
 	}
 	var lines []string
-	for _, it := range t.Items {
+	for _, it := range items {
 		switch it.Kind {
 		case "assistant":
 			if s := strings.TrimSpace(it.Thinking); s != "" {

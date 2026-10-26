@@ -157,7 +157,12 @@ function renderTask(t) {
     const ul = make("ul", undefined, "rounds");
     for (const r of t.rounds) {
       const verdict = r.verdict ? `: ${r.verdict}` : "";
-      const thinking = r.reasoning ? ` · thinking ${r.reasoning}` : "";
+      // How it showed its thinking: how much it explained (counted, on its own
+      // rounds) and how good its reasons were (the review's grade).
+      let thinking = "";
+      if (r.thinking) thinking += ` · explained ${r.thinking.explained}% of ${r.thinking.calls} steps`;
+      if (r.quality) thinking += ` · reasons ${r.quality}/5`;
+      if (r.misleading) thinking += " · said ≠ did";
       const row = make("li", `${WHO[r.who] || r.who}${verdict}${thinking} (${duration(r.seconds)})${r.commit ? ` · ${r.commit}` : ""}`);
       if (r.reasoningNotes) row.append(make("div", r.reasoningNotes, "round-thinking muted small"));
       ul.append(row);

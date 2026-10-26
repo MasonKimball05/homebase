@@ -54,10 +54,27 @@ type Round struct {
 	Notes   string `json:"notes,omitempty"`
 	Seconds int    `json:"seconds"`
 	Commit  string `json:"commit,omitempty"`
-	// Reasoning: the review's grade of how the model showed its thinking
-	// (reasoningGrades), apart from the verdict, and a sentence on why.
-	Reasoning      string `json:"reasoning,omitempty"`
-	ReasoningNotes string `json:"reasoningNotes,omitempty"`
+	// How the model showed its thinking, apart from the verdict. Qwen rounds:
+	// how much it explained, counted from its transcript. Reviews: the
+	// reviewer's 1-5 grade of how good its stated reasons were, whether what
+	// it said contradicted what it did, and why.
+	Thinking       *ThinkingStats `json:"thinking,omitempty"`
+	Quality        int            `json:"quality,omitempty"`
+	Misleading     bool           `json:"misleading,omitempty"`
+	ReasoningNotes string         `json:"reasoningNotes,omitempty"`
+}
+
+// ThinkingStats: how much the model explained itself in a round, counted
+// from its transcript without asking any model (thinkingStats): of its tool
+// calls, the share with something said just before; of its working turns
+// (its summaries left out), the share giving a reason, and the share that
+// only say what it'll look at next ("Let me read the file:").
+type ThinkingStats struct {
+	Calls     int `json:"calls"`
+	Explained int `json:"explained"` // % of Calls
+	Turns     int `json:"turns"`
+	Reasons   int `json:"reasons"` // % of Turns
+	Filler    int `json:"filler"`  // % of Turns
 }
 
 type Task struct {

@@ -60,9 +60,11 @@ type ExampleRound struct {
 	Notes   string `json:"notes,omitempty"`
 	Seconds int    `json:"seconds"`
 	Commit  string `json:"commit,omitempty"`
-	// Reasoning: for reviews, the grade of how the model showed its thinking.
-	Reasoning      string `json:"reasoning,omitempty"`
-	ReasoningNotes string `json:"reasoningNotes,omitempty"`
+	// How it showed its thinking (Round's fields of the same names).
+	Thinking       *ThinkingStats `json:"thinking,omitempty"`
+	Quality        int            `json:"quality,omitempty"`
+	Misleading     bool           `json:"misleading,omitempty"`
+	ReasoningNotes string         `json:"reasoningNotes,omitempty"`
 	// Diff is this round's own change (its commit), for qwen and claude-fix rounds.
 	Diff string `json:"diff,omitempty"`
 	// Transcript is the local model's conversation for qwen rounds (trimmed).
@@ -100,7 +102,7 @@ func (s *Service) saveExample(ctx context.Context, repo string, t Task, rec *rec
 	}
 	author := "none"
 	for i, r := range t.Rounds {
-		er := ExampleRound{Who: r.Who, Verdict: r.Verdict, Notes: r.Notes, Seconds: r.Seconds, Commit: r.Commit, Reasoning: r.Reasoning, ReasoningNotes: r.ReasoningNotes}
+		er := ExampleRound{Who: r.Who, Verdict: r.Verdict, Notes: r.Notes, Seconds: r.Seconds, Commit: r.Commit, Thinking: r.Thinking, Quality: r.Quality, Misleading: r.Misleading, ReasoningNotes: r.ReasoningNotes}
 		if r.Commit != "" && repo != "" {
 			if d, err := git(ctx, repo, "show", "--format=", "--no-color", r.Commit); err == nil {
 				er.Diff = clipText(d, maxRoundDiff)
