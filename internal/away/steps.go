@@ -157,8 +157,13 @@ func thinkingStats(path string) *ThinkingStats {
 		switch it.Kind {
 		case "tool":
 			st.Calls++
-			if i > 0 && items[i-1].Kind == "assistant" && strings.TrimSpace(items[i-1].Text) != "" {
-				explained++
+			// Only something beyond "Now let me read the file:" explains a
+			// step (10-26: with filler counted, half-filler rounds came out
+			// 75-100% explained, over the bar that sends feedback).
+			if i > 0 && items[i-1].Kind == "assistant" {
+				if s := oneLine(items[i-1].Text); s != "" && !fillerTurn.MatchString(s) {
+					explained++
+				}
 			}
 		case "assistant":
 			s := oneLine(it.Text)

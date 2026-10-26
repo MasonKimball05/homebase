@@ -66,9 +66,10 @@ type Round struct {
 
 // ThinkingStats: how much the model explained itself in a round, counted
 // from its transcript without asking any model (thinkingStats): of its tool
-// calls, the share with something said just before; of its working turns
-// (its summaries left out), the share giving a reason, and the share that
-// only say what it'll look at next ("Let me read the file:").
+// calls, the share with something said just before that's more than what
+// it'll look at next ("Let me read the file:", which doesn't count); of its
+// working turns (its summaries left out), the share giving a reason, and the
+// share that are only that filler.
 type ThinkingStats struct {
 	Calls     int `json:"calls"`
 	Explained int `json:"explained"` // % of Calls

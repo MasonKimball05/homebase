@@ -1272,7 +1272,7 @@ func TestThinkingStats(t *testing.T) {
 		{"kind":"tool","label":"Read test_a.py"},
 		{"kind":"assistant","text":"`+summary+`"}]}`), 0o644)
 	got := thinkingStats(path)
-	want := ThinkingStats{Calls: 3, Explained: 67, Turns: 2, Reasons: 50, Filler: 50}
+	want := ThinkingStats{Calls: 3, Explained: 33, Turns: 2, Reasons: 50, Filler: 50} // "Now let me read the tests:" explains nothing
 	if got == nil || *got != want {
 		t.Fatalf("got %+v, want %+v", got, want)
 	}

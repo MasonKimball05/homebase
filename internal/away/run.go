@@ -594,7 +594,7 @@ func reasoningAsk(said string, st *ThinkingStats) (section, fields, rules string
 	}
 	section = "\n\nHow it explained itself as it worked, in its own words, in order, with the tools it called:\n\n<narration>\n" + said + "\n</narration>\n\n"
 	if st != nil {
-		section += fmt.Sprintf("Away has already counted how much it explained: %d of its %d tool calls had something said just before them (%d%%), and %d%% of its turns gave a reason. Don't grade the amount. ", st.Explained*st.Calls/100, st.Calls, st.Explained, st.Reasons)
+		section += fmt.Sprintf("Away has already counted how much it explained: %d of its %d tool calls had something said just before them beyond \"now let me read X\" (%d%%), and %d%% of its turns gave a reason. Don't grade the amount. ", st.Explained*st.Calls/100, st.Calls, st.Explained, st.Reasons)
 	}
 	section += "Grade the quality of what it did say, separately from the verdict: the owner wants to see how it reached its result. This grade never changes the verdict."
 	fields = `, "quality": 1-5, "misleading": true | false, "reasoning_notes": "..."`
