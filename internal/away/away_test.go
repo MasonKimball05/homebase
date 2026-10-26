@@ -1169,3 +1169,83 @@ func TestQwenPromptPutsItsOwnNotesFirst(t *testing.T) {
 		t.Fatalf("no examples, no files: %s", got)
 	}
 }
+
+// 10-25: the review also grades how Qwen showed its thinking, apart from the verdict.
+func TestReviewGradesHowItShowedItsThinking(t *testing.T) {
+	steps := &fakeSteps{
+		reviews: []string{
+			`{"verdict": "revise", "notes": "1. say hello", "reasoning": "thin", "reasoning_notes": "Mostly \"now let me read\"."}`,
+			`{"verdict": "pass", "notes": "Good.", "reasoning": "clear", "reasoning_notes": "Said why before each step."}`,
+		},
+	}
+	s, _, _ := setup(t, steps)
+	task, _ := s.Add("proj", "write out.txt")
+	s.SetMode(ModeOn)
+	got := waitFor(t, s, task.ID, finished)
+	if got.Verdict != "pass" || got.Notes != "Good." {
+		t.Fatalf("%+v", got)
+	}
+	var grades []string
+	for _, r := range got.Rounds {
+		if r.Who == "review" {
+			grades = append(grades, r.Reasoning+": "+r.ReasoningNotes)
+		}
+	}
+	if strings.Join(grades, " | ") != `thin: Mostly "now let me read". | clear: Said why before each step.` {
+		t.Fatalf("grades: %q", grades)
+	}
+	// The review saw what Qwen said (the fake transcript's "Done.").
+	if !strings.Contains(steps.claudePrompts[0], "<narration>") || !strings.Contains(steps.claudePrompts[0], "Qwen: Done.") {
+		t.Fatalf("review prompt: %s", steps.claudePrompts[0])
+	}
+	// The thin grade went back with the notes, after them.
+	p := steps.prompts[1]
+	if !strings.Contains(p, `graded how you showed your thinking as "thin"`) || strings.Index(p, "1. say hello") > strings.Index(p, "graded how") {
+		t.Fatalf("round 2 prompt: %s", p)
+	}
+}
+
+func TestAGradeAloneSendsNothingBack(t *testing.T) {
+	if got := thinkingFeedback("clear", "fine"); got != "" {
+		t.Fatalf("clear: %q", got)
+	}
+	if got := thinkingFeedback("", ""); got != "" {
+		t.Fatalf("none given: %q", got)
+	}
+	steps := &fakeSteps{reviews: []string{`{"verdict": "pass", "notes": "ok", "reasoning": "none", "reasoning_notes": "silent"}`}}
+	s, _, _ := setup(t, steps)
+	task, _ := s.Add("proj", "write out.txt")
+	s.SetMode(ModeOn)
+	got := waitFor(t, s, task.ID, finished)
+	if got.Verdict != "pass" || len(steps.prompts) != 1 {
+		t.Fatalf("a poor grade on passing work sent it back: %+v, %d prompts", got, len(steps.prompts))
+	}
+}
+
+func TestParseReplyReasoning(t *testing.T) {
+	v := parseReply(`ok {"verdict": "pass", "notes": "x", "reasoning": " Misleading ", "reasoning_notes": "said it ran tests"}`)
+	if v.Reasoning != "misleading" || v.ReasoningNotes != "said it ran tests" {
+		t.Fatalf("%+v", v)
+	}
+	if v := parseReply(`{"verdict": "pass", "notes": "x", "reasoning": "great", "reasoning_notes": "?"}`); v.Reasoning != "" || v.ReasoningNotes != "" {
+		t.Fatalf("an unknown grade was kept: %+v", v)
+	}
+	if v := parseReply(`{"verdict": "revise", "notes": "x"}`); v.Verdict != "revise" || v.Reasoning != "" {
+		t.Fatalf("%+v", v)
+	}
+}
+
+func TestNarration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "r.qwen.json")
+	os.WriteFile(path, []byte(`{"items":[{"kind":"user","text":"task"},{"kind":"assistant","text":"I'll read a.py\n because it's named.","thinking":""},{"kind":"tool","label":"Read a.py","name":"read_file"},{"kind":"tool","name":"search"},{"kind":"check"},{"kind":"assistant","text":"","thinking":"hmm"}]}`), 0o644)
+	want := "Qwen: I'll read a.py because it's named.\n  [tool] Read a.py\n  [tool] search\n  [Loom ran the project's check]\nQwen (thinking): hmm"
+	if got := narration(path); got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+	if narration(filepath.Join(t.TempDir(), "missing")) != "" {
+		t.Fatal("a missing transcript")
+	}
+	if !strings.Contains(reviewPrompt(Task{}, "", "", "", ""), `"notes": "..."}`) || strings.Contains(reviewPrompt(Task{}, "", "", "", ""), "reasoning") {
+		t.Fatal("without a narration the review shouldn't be asked to grade it")
+	}
+}

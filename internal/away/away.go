@@ -54,6 +54,10 @@ type Round struct {
 	Notes   string `json:"notes,omitempty"`
 	Seconds int    `json:"seconds"`
 	Commit  string `json:"commit,omitempty"`
+	// Reasoning: the review's grade of how the model showed its thinking
+	// (reasoningGrades), apart from the verdict, and a sentence on why.
+	Reasoning      string `json:"reasoning,omitempty"`
+	ReasoningNotes string `json:"reasoningNotes,omitempty"`
 }
 
 type Task struct {

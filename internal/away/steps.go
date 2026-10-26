@@ -112,6 +112,57 @@ func transcriptTools(path string) (calls, input int) {
 	return calls, t.Usage.Input
 }
 
+// narration: what the model said as it worked, each turn in order with the
+// tools it then called, for the review to grade (reasoningGrades). Long
+// turns (its summaries) are clipped; so is the whole, keeping its start and
+// end. "" when the transcript can't be read.
+func narration(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var t struct {
+		Items []struct {
+			Kind     string `json:"kind"`
+			Text     string `json:"text"`
+			Thinking string `json:"thinking"`
+			Label    string `json:"label"`
+			Name     string `json:"name"`
+		} `json:"items"`
+	}
+	if json.Unmarshal(b, &t) != nil {
+		return ""
+	}
+	var lines []string
+	for _, it := range t.Items {
+		switch it.Kind {
+		case "assistant":
+			if s := strings.TrimSpace(it.Thinking); s != "" {
+				lines = append(lines, "Qwen (thinking): "+clipText(oneLine(s), 600))
+			}
+			if s := strings.TrimSpace(it.Text); s != "" {
+				lines = append(lines, "Qwen: "+clipText(oneLine(s), 600))
+			}
+		case "tool":
+			name := it.Label
+			if name == "" {
+				name = it.Name
+			}
+			lines = append(lines, "  [tool] "+name)
+		case "check":
+			lines = append(lines, "  [Loom ran the project's check]")
+		}
+	}
+	const max = 12000
+	all := strings.Join(lines, "\n")
+	if len(all) > max {
+		all = all[:max/2] + "\n  [… middle left out …]\n" + all[len(all)-max/2:]
+	}
+	return all
+}
+
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+
 // ModelError: the local model couldn't be used at all (the task stops there,
 // rather than sending an empty attempt to review).
 //

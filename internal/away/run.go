@@ -273,6 +273,7 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 	mutated := false  // so does the mutation check (mutants.go)
 	mutantNotes := "" // what it sent back, for the review to follow up
 	retried := false  // a round whose answer broke gets one more go
+	gradeNote := ""   // the review's word on how it showed its thinking, for the next round only
 	for round := 1; round <= s.set.Rounds; round++ {
 		attempt++
 		stage(fmt.Sprintf("local model, round %d of %d", round, s.set.Rounds))
@@ -281,7 +282,8 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 		if notes != "" {
 			files = changedFiles(ctx, wt, t.BaseCommit)
 		}
-		prompt := qwenPrompt(t.Text, examples, notes, files)
+		prompt := qwenPrompt(t.Text, examples, notes+gradeNote, files)
+		gradeNote = ""
 		transcript := filepath.Join(s.set.LogDir, fmt.Sprintf("%s.round%d.qwen.json", t.ID, attempt))
 		rec.transcripts[len(t.Rounds)] = transcript // the qwen round about to be added
 		qerr := s.steps.Qwen(ctx, wt, prompt, s.set.Tests[t.Project], transcript, log)
@@ -390,15 +392,19 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 
 		stage(fmt.Sprintf("Claude reviewing round %d", round))
 		started = time.Now()
-		reply, err := s.steps.Claude(ctx, wt, reviewPrompt(*t, ran, s.set.Tests[t.Project], mutantNotes), false, log)
+		reply, err := s.steps.Claude(ctx, wt, reviewPrompt(*t, ran, s.set.Tests[t.Project], mutantNotes, narration(transcript)), false, log)
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
 		if err != nil {
 			return "", fmt.Errorf("Claude Code: %v", err)
 		}
-		verdict, notes = parseVerdict(reply)
-		t.Rounds = append(t.Rounds, Round{Who: "review", Verdict: verdict, Notes: notes, Seconds: int(time.Since(started).Seconds())})
+		v := parseReply(reply)
+		verdict, notes = v.Verdict, v.Notes
+		t.Rounds = append(t.Rounds, Round{Who: "review", Verdict: verdict, Notes: notes, Seconds: int(time.Since(started).Seconds()), Reasoning: v.Reasoning, ReasoningNotes: v.ReasoningNotes})
+		if verdict == "revise" {
+			gradeNote = thinkingFeedback(v.Reasoning, v.ReasoningNotes)
+		}
 		if verdict == "pass" || verdict == "fail" {
 			break
 		}
@@ -461,6 +467,22 @@ func changedFiles(ctx context.Context, wt, base string) []string {
 		return nil
 	}
 	return strings.Fields(out)
+}
+
+// thinkingFeedback: the review's grade of how the model showed its thinking,
+// put to it with the notes when its work goes back anyway. Nothing for
+// "clear" or no grade: the grade alone never sends work back.
+func thinkingFeedback(grade, why string) string {
+	if grade == "" || grade == "clear" {
+		return ""
+	}
+	s := fmt.Sprintf("\n\nSeparately, the reviewer graded how you showed your thinking as %q (this doesn't decide the review)", grade)
+	if why != "" {
+		s += ": " + why
+	} else {
+		s += "."
+	}
+	return s + "\nThis round, before each step say in a sentence why you're taking it, and when something surprises you, say what you learned and what you'll do about it."
 }
 
 // qwenPrompt: what the local model is given in a round. After the first,
@@ -540,7 +562,26 @@ func testHint(command string) string {
 	return "here: `" + command + " <test file or module>`"
 }
 
-func reviewPrompt(t Task, testsPassed, testCommand, mutantNotes string) string {
+// reasoningGrades: how the review grades the way the model showed its
+// thinking, apart from the verdict (10-25: the owner wanted to see how it got
+// where it got, and asked for it graded, to encourage it).
+var reasoningGrades = map[string]bool{"clear": true, "thin": true, "none": true, "misleading": true}
+
+// reasoningAsk: the review prompt's part about grading what the model said
+// as it worked (narration), and the JSON fields that grade goes in.
+func reasoningAsk(said string) (section, fields, rules string) {
+	if said == "" {
+		return "", "", ""
+	}
+	section = "\n\nHow it explained itself as it worked, in its own words, in order, with the tools it called:\n\n<narration>\n" + said + "\n</narration>\n\n" +
+		"Grade that too, separately: the owner wants to see how it reached its result. This grade never changes the verdict."
+	fields = `, "reasoning": "clear" | "thin" | "none" | "misleading", "reasoning_notes": "..."`
+	rules = "\n- reasoning: clear = before most steps it says why, and when something surprised it (a failing test, code that wasn't what it expected) it says what it learned and what it will do; thin = mostly \"now let me read X\" with no reason, or reasons only now and then; none = next to nothing between tool calls; misleading = what it says doesn't match what it did (it claims a check or a run it didn't do, or gives a reason its actions contradict). reasoning_notes: one or two sentences for the model, quoting it where that helps."
+	return
+}
+
+func reviewPrompt(t Task, testsPassed, testCommand, mutantNotes, said string) string {
+	section, fields, rules := reasoningAsk(said)
 	ran := ""
 	if testsPassed != "" {
 		ran = " Away already ran `" + testsPassed + "` on this branch and it passed, so judge the tests' quality and coverage rather than whether they run."
@@ -557,13 +598,13 @@ func reviewPrompt(t Task, testsPassed, testCommand, mutantNotes string) string {
 
 See the change with `+"`git diff %s...HEAD`"+` and read whatever files you need. You may run the project's tests (%s). Do not edit anything.%s
 
-Judge it like a careful reviewer: does it do the whole task, correctly; does it stay in scope (no unrelated changes, no "improvements" nobody asked for); could it break something (look at callers, tests, migrations)?
+Judge it like a careful reviewer: does it do the whole task, correctly; does it stay in scope (no unrelated changes, no "improvements" nobody asked for); could it break something (look at callers, tests, migrations)?%s
 
 End your reply with exactly one line of JSON and nothing after it:
-{"verdict": "pass" | "revise" | "fail", "notes": "..."}
+{"verdict": "pass" | "revise" | "fail", "notes": "..."%s}
 - pass: good to merge as it is. notes: one or two sentences on what it did.
 - revise: notes are concrete, numbered instructions for the model to fix it (file and what to change).
-- fail: the task is impossible, unclear or a bad idea as written. notes explain why, for the owner.`, t.Branch, t.Text, t.BaseCommit, testHint(testCommand), ran)
+- fail: the task is impossible, unclear or a bad idea as written. notes explain why, for the owner.%s`, t.Branch, t.Text, t.BaseCommit, testHint(testCommand), ran, section, fields, rules)
 }
 
 // drillNote: for a drill, what the review needs to know and the model wasn't told.
@@ -602,24 +643,42 @@ End your reply with exactly one line of JSON and nothing after it:
 // drill's review said "Pass" about `json={'bot': {...}}` and was read as
 // "revise", so Claude redid work the local model had got right.
 func parseVerdict(reply string) (string, string) {
+	v := parseReply(reply)
+	return v.Verdict, v.Notes
+}
+
+// verdictLine: the JSON line a review or fix ends with.
+type verdictLine struct {
+	Verdict        string `json:"verdict"`
+	Notes          string `json:"notes"`
+	Reasoning      string `json:"reasoning"`
+	ReasoningNotes string `json:"reasoning_notes"`
+}
+
+// parseReply: parseVerdict's whole line, with the reasoning grade ("" when
+// missing or not one of reasoningGrades).
+func parseReply(reply string) verdictLine {
 	for end := len(reply); end > 0; {
 		i := strings.LastIndex(reply[:end], "{")
 		if i < 0 {
 			break
 		}
 		end = i
-		var v struct {
-			Verdict string `json:"verdict"`
-			Notes   string `json:"notes"`
-		}
+		var v verdictLine
 		if json.NewDecoder(strings.NewReader(reply[i:])).Decode(&v) == nil {
 			switch v.Verdict {
 			case "pass", "revise", "fail", "fixed":
-				return v.Verdict, strings.TrimSpace(v.Notes)
+				v.Notes = strings.TrimSpace(v.Notes)
+				v.Reasoning = strings.ToLower(strings.TrimSpace(v.Reasoning))
+				if !reasoningGrades[v.Reasoning] {
+					v.Reasoning, v.ReasoningNotes = "", ""
+				}
+				v.ReasoningNotes = strings.TrimSpace(v.ReasoningNotes)
+				return v
 			}
 		}
 	}
-	return "revise", firstLine(reply, 4000)
+	return verdictLine{Verdict: "revise", Notes: firstLine(reply, 4000)}
 }
 
 // ---------------- git ----------------

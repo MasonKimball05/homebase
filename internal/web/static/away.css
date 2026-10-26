@@ -46,6 +46,7 @@
 
 .rounds { margin: 6px 0 0; padding: 0; list-style: none; font-size: 13px; color: var(--muted); }
 .rounds li { padding: 2px 0; }
+.round-thinking { margin: 2px 0 0 12px; }
 
 .task details { margin-top: 8px; }
 .task summary { cursor: pointer; font-weight: 600; font-size: 13px; }

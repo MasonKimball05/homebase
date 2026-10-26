@@ -157,7 +157,10 @@ function renderTask(t) {
     const ul = make("ul", undefined, "rounds");
     for (const r of t.rounds) {
       const verdict = r.verdict ? `: ${r.verdict}` : "";
-      ul.append(make("li", `${WHO[r.who] || r.who}${verdict} (${duration(r.seconds)})${r.commit ? ` · ${r.commit}` : ""}`));
+      const thinking = r.reasoning ? ` · thinking ${r.reasoning}` : "";
+      const row = make("li", `${WHO[r.who] || r.who}${verdict}${thinking} (${duration(r.seconds)})${r.commit ? ` · ${r.commit}` : ""}`);
+      if (r.reasoningNotes) row.append(make("div", r.reasoningNotes, "round-thinking muted small"));
+      ul.append(row);
     }
     li.append(ul);
   }
