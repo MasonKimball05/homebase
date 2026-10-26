@@ -53,10 +53,18 @@ the cost is a few dollars a run.
 
 ## Steps
 
-1. **Exporter** (Homebase, small): `homebase -export-training <dir>` writes
-   train/held-out JSONL from the PC's examples and logs, using the rules
-   above. It needs Loom to print the exact system prompt and tool definitions
-   for a project (a small script in `loom/tools/qwen`).
+1. **Exporter** (done 10-26, `internal/away/export.go`): on the PC,
+   `homebase -config homebase.json -export-training <dir>` writes
+   train.jsonl and heldout.jsonl from the examples and logs, using the rules
+   above, and prints what it left out and why. Loom's runner saves the exact
+   messages and tools it sent Ollama since 10-26; older transcripts are
+   rebuilt from the panel's rows, borrowing the system prompt from the newest
+   exact transcript of the same project, so they export once one round of
+   that project has run with the new runner (Skirmish needs one queued by
+   hand). Each line carries `exact`, `era` (before/after the "say why" rule),
+   `drill`, the review's 1-5 grade of its reasons and the counted
+   `thinking`, for choosing what to train on; attempts a review found
+   misleading are left out.
 2. **Dry run** (~40 examples, one rented hour): train, merge, convert to GGUF
    (Q4_K_M, like the current model), `ollama create qwen3-coder-away`, and run
    the benchmark against both models. The point is the pipeline, not a better

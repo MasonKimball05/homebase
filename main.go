@@ -36,7 +36,16 @@ func main() {
 	check := flag.Bool("check", false, "validate the config and exit without starting anything")
 	testAlert := flag.Bool("test-alert", false, "send a test notification and exit")
 	idleReport := flag.Bool("idle-report", false, "keep away-idle.json (next to the config) up to date with how long this session has been idle; run at logon (see README, Away)")
+	exportTraining := flag.String("export-training", "", "write the local model's accepted Away work to this folder as fine-tuning data (train.jsonl, heldout.jsonl) and exit; see docs/fine-tune-plan.md")
 	flag.Parse()
+
+	if *exportTraining != "" {
+		if err := exportTrainingData(*configPath, *exportTraining); err != nil {
+			fmt.Fprintln(os.Stderr, "homebase:", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	if *idleReport {
 		reportIdle(*configPath)
@@ -297,6 +306,26 @@ func run(configPath string) error {
 // reportIdle runs in your logon session (Windows only): homebase itself runs
 // as a background task and can't see the keyboard and mouse, so this writes
 // how long they've been untouched for internal/away's "when idle" mode.
+// exportTrainingData: -export-training. The examples and the full transcripts
+// are where the running homebase keeps them (next to the config, and in the
+// log folder's away/).
+func exportTrainingData(configPath, out string) error {
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return err
+	}
+	rep, err := away.ExportTraining(away.ExportOptions{
+		ExamplesDir: filepath.Join(filepath.Dir(configPath), "away-examples"),
+		LogDir:      filepath.Join(cfg.LogDir, "away"),
+		Out:         out,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s\nWrote %s and %s.\n", rep, filepath.Join(out, "train.jsonl"), filepath.Join(out, "heldout.jsonl"))
+	return nil
+}
+
 func reportIdle(configPath string) {
 	path := filepath.Join(filepath.Dir(configPath), "away-idle.json")
 	if _, ok := away.IdleSeconds(); !ok {

@@ -163,6 +163,7 @@ function renderTask(t) {
       if (r.thinking) thinking += ` · explained ${r.thinking.explained}% of ${r.thinking.calls} steps`;
       if (r.quality) thinking += ` · reasons ${r.quality}/5`;
       if (r.misleading) thinking += " · said ≠ did";
+      if (r.neverPassed && r.neverPassed.length) thinking += ` · never passed: ${r.neverPassed.join(", ")}`;
       const row = make("li", `${WHO[r.who] || r.who}${verdict}${thinking} (${duration(r.seconds)})${r.commit ? ` · ${r.commit}` : ""}`);
       if (r.reasoningNotes) row.append(make("div", r.reasoningNotes, "round-thinking muted small"));
       ul.append(row);

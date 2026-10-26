@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1229,16 +1230,16 @@ func TestAGradeAloneSendsNothingBack(t *testing.T) {
 
 func TestThinkingFeedback(t *testing.T) {
 	good := &ThinkingStats{Calls: 10, Explained: 90}
-	if got := thinkingFeedback(good, verdictLine{Quality: 5}); got != "" {
+	if got := thinkingFeedback(good, nil, verdictLine{Quality: 5}); got != "" {
 		t.Fatalf("good on both: %q", got)
 	}
-	if got := thinkingFeedback(nil, verdictLine{}); got != "" {
+	if got := thinkingFeedback(nil, nil, verdictLine{}); got != "" {
 		t.Fatalf("nothing known: %q", got)
 	}
-	if got := thinkingFeedback(&ThinkingStats{Calls: 10, Explained: 50}, verdictLine{Quality: 5}); !strings.Contains(got, "50% of your tool calls (5 of 10)") || strings.Contains(got, "/5") {
+	if got := thinkingFeedback(&ThinkingStats{Calls: 10, Explained: 50}, nil, verdictLine{Quality: 5}); !strings.Contains(got, "50% of your tool calls (5 of 10)") || strings.Contains(got, "/5") {
 		t.Fatalf("too few explained: %q", got)
 	}
-	got := thinkingFeedback(good, verdictLine{Quality: 4, Misleading: true, ReasoningNotes: "said it ran the tests"})
+	got := thinkingFeedback(good, nil, verdictLine{Quality: 4, Misleading: true, ReasoningNotes: "said it ran the tests"})
 	if !strings.Contains(got, "4/5. said it ran the tests") || !strings.Contains(got, "didn't match what you did") {
 		t.Fatalf("misleading: %q", got)
 	}
@@ -1291,7 +1292,59 @@ func TestNarration(t *testing.T) {
 	if narration(filepath.Join(t.TempDir(), "missing")) != "" {
 		t.Fatal("a missing transcript")
 	}
-	if p := reviewPrompt(Task{}, "", "", "", "", nil); !strings.Contains(p, `"notes": "..."}`) || strings.Contains(p, "quality") {
+	if p := reviewPrompt(Task{}, "", "", "", "", nil, nil); !strings.Contains(p, `"notes": "..."}`) || strings.Contains(p, "quality") {
 		t.Fatal("without a narration the review shouldn't be asked to grade it")
+	}
+}
+
+// 10-26: a drill's run of a module that doesn't exist failed, and it said
+// those tests "passed successfully".
+func TestNeverPassed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "r.qwen.json")
+	run := func(target, result string) string {
+		label := "Run the tests"
+		if target != "" {
+			label += ": " + target
+		}
+		return `{"kind":"tool","name":"run_tests","label":"` + label + `","result":"` + result + `"}`
+	}
+	os.WriteFile(path, []byte(`{"items":[
+		`+run("src.tests.a.test_x", "Failed (exit 1)")+`,
+		`+run("src.tests.a.test_x", "Passed")+`,
+		`+run("src.tests.chat", "Failed (exit 1)")+`,
+		`+run("src.tests.a.test_x src.tests.chat.test_channel", "Failed (exit 1)")+`,
+		`+run("src.tests.a.test_x", "Already passed")+`,
+		`+run("src.tests.b.test_y", "Timed out")+`,
+		`+run("src.tests.b", "Passed")+`,
+		{"kind":"tool","name":"read_file","label":"Read a.py"}]}`), 0o644)
+	// test_x passed later (again), b passed as a whole; chat never did.
+	if got := strings.Join(neverPassed(path), " "); got != "src.tests.chat src.tests.chat.test_channel" {
+		t.Fatalf("got %q", got)
+	}
+	if !strings.Contains(narration(path), "Run the tests: src.tests.chat → Failed (exit 1)") {
+		t.Fatalf("narration lacks the outcome:\n%s", narration(path))
+	}
+	// The whole suite passing covers everything.
+	os.WriteFile(path, []byte(`{"items":[`+run("src.tests.chat", "Failed (exit 1)")+`,`+run("", "Passed")+`]}`), 0o644)
+	if got := neverPassed(path); len(got) != 0 {
+		t.Fatalf("after the whole suite passed: %q", got)
+	}
+	if p := reviewPrompt(Task{}, "", "", "", "Qwen: done", nil, []string{"src.tests.chat"}); !strings.Contains(p, "never got these to pass: src.tests.chat") {
+		t.Fatalf("review prompt: %s", p)
+	}
+	if got := thinkingFeedback(&ThinkingStats{Calls: 5, Explained: 100}, []string{"src.tests.chat"}, verdictLine{Quality: 5}); !strings.Contains(got, "never passed after: src.tests.chat") {
+		t.Fatalf("feedback: %q", got)
+	}
+}
+
+// The drill that prompted it, from the PC (10-26-103953's last round), when it's there.
+func TestNeverPassedOnTheRealDrill(t *testing.T) {
+	path := os.Getenv("DRILL_TRANSCRIPT")
+	if path == "" {
+		t.Skip("set DRILL_TRANSCRIPT to the transcript")
+	}
+	t.Logf("never passed: %v", neverPassed(path))
+	if !slices.Contains(neverPassed(path), "src.tests.chat.test_channel_chat") {
+		t.Fatal("missed the module it said passed")
 	}
 }

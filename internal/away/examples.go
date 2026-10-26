@@ -62,6 +62,7 @@ type ExampleRound struct {
 	Commit  string `json:"commit,omitempty"`
 	// How it showed its thinking (Round's fields of the same names).
 	Thinking       *ThinkingStats `json:"thinking,omitempty"`
+	NeverPassed    []string       `json:"neverPassed,omitempty"`
 	Quality        int            `json:"quality,omitempty"`
 	Misleading     bool           `json:"misleading,omitempty"`
 	ReasoningNotes string         `json:"reasoningNotes,omitempty"`
@@ -69,6 +70,8 @@ type ExampleRound struct {
 	Diff string `json:"diff,omitempty"`
 	// Transcript is the local model's conversation for qwen rounds (trimmed).
 	Transcript json.RawMessage `json:"transcript,omitempty"`
+	// File: the full transcript in the Away log folder, for qwen rounds (export.go).
+	File string `json:"file,omitempty"`
 }
 
 // recording collects what an attempt produces beyond the Task itself.
@@ -102,7 +105,7 @@ func (s *Service) saveExample(ctx context.Context, repo string, t Task, rec *rec
 	}
 	author := "none"
 	for i, r := range t.Rounds {
-		er := ExampleRound{Who: r.Who, Verdict: r.Verdict, Notes: r.Notes, Seconds: r.Seconds, Commit: r.Commit, Thinking: r.Thinking, Quality: r.Quality, Misleading: r.Misleading, ReasoningNotes: r.ReasoningNotes}
+		er := ExampleRound{Who: r.Who, Verdict: r.Verdict, Notes: r.Notes, Seconds: r.Seconds, Commit: r.Commit, Thinking: r.Thinking, NeverPassed: r.NeverPassed, Quality: r.Quality, Misleading: r.Misleading, ReasoningNotes: r.ReasoningNotes}
 		if r.Commit != "" && repo != "" {
 			if d, err := git(ctx, repo, "show", "--format=", "--no-color", r.Commit); err == nil {
 				er.Diff = clipText(d, maxRoundDiff)
@@ -117,6 +120,7 @@ func (s *Service) saveExample(ctx context.Context, repo string, t Task, rec *rec
 		if p, ok := rec.transcripts[i]; ok {
 			if b, err := os.ReadFile(p); err == nil {
 				er.Transcript = trimTranscript(b)
+				er.File = filepath.Base(p)
 			}
 		}
 		ex.Rounds = append(ex.Rounds, er)

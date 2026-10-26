@@ -59,6 +59,7 @@ type Round struct {
 	// reviewer's 1-5 grade of how good its stated reasons were, whether what
 	// it said contradicted what it did, and why.
 	Thinking       *ThinkingStats `json:"thinking,omitempty"`
+	NeverPassed    []string       `json:"neverPassed,omitempty"` // qwen rounds: tests it ran that never passed (neverPassed)
 	Quality        int            `json:"quality,omitempty"`
 	Misleading     bool           `json:"misleading,omitempty"`
 	ReasoningNotes string         `json:"reasoningNotes,omitempty"`

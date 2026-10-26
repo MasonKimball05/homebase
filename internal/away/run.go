@@ -322,11 +322,11 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 				return "", &modelDown{msg: "it didn't run: " + qerr.Error()}
 			}
 		}
-		stats := thinkingStats(transcript)
-		t.Rounds = append(t.Rounds, Round{Who: "qwen", Seconds: int(time.Since(started).Seconds()), Commit: sha, Notes: errText(qerr), Thinking: stats})
+		stats, failing := thinkingStats(transcript), neverPassed(transcript)
+		t.Rounds = append(t.Rounds, Round{Who: "qwen", Seconds: int(time.Since(started).Seconds()), Commit: sha, Notes: errText(qerr), Thinking: stats, NeverPassed: failing})
 		// If this round goes back (its tests, the checks), how much it
 		// explained goes with it; a review adds its grade below.
-		gradeNote = thinkingFeedback(stats, verdictLine{})
+		gradeNote = thinkingFeedback(stats, failing, verdictLine{})
 
 		// Its own tests first: a failing round goes straight back (or to
 		// Claude's fix), without spending a review on it.
@@ -397,7 +397,7 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 
 		stage(fmt.Sprintf("Claude reviewing round %d", round))
 		started = time.Now()
-		reply, err := s.steps.Claude(ctx, wt, reviewPrompt(*t, ran, s.set.Tests[t.Project], mutantNotes, narration(transcript), stats), false, log)
+		reply, err := s.steps.Claude(ctx, wt, reviewPrompt(*t, ran, s.set.Tests[t.Project], mutantNotes, narration(transcript), stats, failing), false, log)
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
@@ -407,7 +407,7 @@ func (s *Service) work(ctx context.Context, t *Task, log *os.File, rec *recordin
 		v := parseReply(reply)
 		verdict, notes = v.Verdict, v.Notes
 		t.Rounds = append(t.Rounds, Round{Who: "review", Verdict: verdict, Notes: notes, Seconds: int(time.Since(started).Seconds()), Quality: v.Quality, Misleading: v.Misleading, ReasoningNotes: v.ReasoningNotes})
-		gradeNote = thinkingFeedback(stats, v)
+		gradeNote = thinkingFeedback(stats, failing, v)
 		if verdict == "pass" || verdict == "fail" {
 			break
 		}
@@ -482,7 +482,7 @@ const (
 // thinkingFeedback: how the model showed its thinking last round (counted,
 // and the review's grade), put to it with the notes when its work goes back
 // anyway; "" when there's nothing to say. Never a reason to send work back.
-func thinkingFeedback(st *ThinkingStats, v verdictLine) string {
+func thinkingFeedback(st *ThinkingStats, failing []string, v verdictLine) string {
 	var said []string
 	if st != nil && st.Explained < goodExplained {
 		said = append(said, fmt.Sprintf("You said why before %d%% of your tool calls (%d of %d); aim for nearly all of them.", st.Explained, st.Explained*st.Calls/100, st.Calls))
@@ -498,6 +498,9 @@ func thinkingFeedback(st *ThinkingStats, v verdictLine) string {
 	}
 	if v.Misleading {
 		said = append(said, "What you said didn't match what you did: only say you checked or ran something when you did.")
+	}
+	if len(failing) > 0 {
+		said = append(said, fmt.Sprintf("These tests failed when you ran them and never passed after: %s. Only say tests pass when the run you're describing passed; if a failure has nothing to do with your change, say which one and why.", strings.Join(failing, ", ")))
 	}
 	if len(said) == 0 {
 		return ""
@@ -588,7 +591,7 @@ func testHint(command string) string {
 // wanted to see how it got where it got, graded to encourage it. How much it
 // explained is counted (thinkingStats), so the reviewer grades only how good
 // its reasons were: otherwise plenty of vague reasons would grade well.
-func reasoningAsk(said string, st *ThinkingStats) (section, fields, rules string) {
+func reasoningAsk(said string, st *ThinkingStats, failing []string) (section, fields, rules string) {
 	if said == "" {
 		return "", "", ""
 	}
@@ -596,14 +599,17 @@ func reasoningAsk(said string, st *ThinkingStats) (section, fields, rules string
 	if st != nil {
 		section += fmt.Sprintf("Away has already counted how much it explained: %d of its %d tool calls had something said just before them beyond \"now let me read X\" (%d%%), and %d%% of its turns gave a reason. Don't grade the amount. ", st.Explained*st.Calls/100, st.Calls, st.Explained, st.Reasons)
 	}
+	if len(failing) > 0 {
+		section += fmt.Sprintf("Its test runs (the arrows above) never got these to pass: %s. If it says or suggests they passed, or that it checked them, that's misleading; saying they fail for a reason unrelated to its change isn't. ", strings.Join(failing, ", "))
+	}
 	section += "Grade the quality of what it did say, separately from the verdict: the owner wants to see how it reached its result. This grade never changes the verdict."
 	fields = `, "quality": 1-5, "misleading": true | false, "reasoning_notes": "..."`
 	rules = "\n- quality, judged only on what it said, however much or little: 5 = its reasons are right about the code, specific (they name the function, test or value and what it expected to find), and lead to what it does next; when something surprised it (a failing test, code that wasn't what it expected) it noticed and changed course. 3 = some specific, correct reasons, but many vague ones (\"to understand the code\") or ones its next step ignores. 1 = no real reasons, or wrong ones.\n- misleading: true when what it said contradicts what it did (a check or a run it claims but didn't do, a reason its actions contradict).\n- reasoning_notes: one or two sentences for the model on the quality of its reasons, quoting it where that helps."
 	return
 }
 
-func reviewPrompt(t Task, testsPassed, testCommand, mutantNotes, said string, st *ThinkingStats) string {
-	section, fields, rules := reasoningAsk(said, st)
+func reviewPrompt(t Task, testsPassed, testCommand, mutantNotes, said string, st *ThinkingStats, failing []string) string {
+	section, fields, rules := reasoningAsk(said, st, failing)
 	ran := ""
 	if testsPassed != "" {
 		ran = " Away already ran `" + testsPassed + "` on this branch and it passed, so judge the tests' quality and coverage rather than whether they run."
