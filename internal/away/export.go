@@ -220,6 +220,7 @@ func ExportTraining(o ExportOptions) (ExportReport, error) {
 			}
 			chat.Messages, chat.Tools = msgs, t.tools
 		}
+		chat.Messages = cutRepeats(chat.Messages)
 		b, err := json.Marshal(chat)
 		if err != nil {
 			return rep, err
@@ -426,6 +427,38 @@ func rebuildMessages(tr *fullTranscript, t template) ([]chatMessage, string) {
 		}
 	}
 	return msgs, ""
+}
+
+// cutRepeats ends a chat where the model asked to run tests that had already
+// passed, with nothing changed since: the turn that asked becomes its last,
+// without the call. What followed was the habit Loom now stops (it asked
+// again and again, 10-23 to 10-26: 40 of the first 67 chats), and isn't what
+// to learn. Left as it is if it changed any file after, or that turn says
+// nothing.
+func cutRepeats(msgs []chatMessage) []chatMessage {
+	for k, m := range msgs {
+		if m.Role != "tool" || !(strings.HasPrefix(m.Content, "Not run: these tests already passed") || strings.HasPrefix(m.Content, "Not run: you were told these tests")) {
+			continue
+		}
+		a := k - 1
+		for a >= 0 && msgs[a].Role != "assistant" {
+			a--
+		}
+		if a < 0 || strings.TrimSpace(msgs[a].Content) == "" {
+			return msgs
+		}
+		for _, later := range msgs[a+1:] {
+			for _, c := range later.ToolCalls {
+				if c.Function.Name == "edit_file" || c.Function.Name == "write_file" {
+					return msgs
+				}
+			}
+		}
+		last := msgs[a]
+		last.ToolCalls = nil
+		return append(msgs[:a:a], last)
+	}
+	return msgs
 }
 
 // callArgs: a tool call's arguments as the model wrote them. The panel

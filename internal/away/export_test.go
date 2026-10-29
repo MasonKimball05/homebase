@@ -177,3 +177,70 @@ func TestHeldOutIsByTaskAndStable(t *testing.T) {
 		t.Fatalf("%d of 1000 held out at 15%%", in)
 	}
 }
+
+func TestCutRepeats(t *testing.T) {
+	msg := func(role, content string, calls ...string) chatMessage {
+		m := chatMessage{Role: role, Content: content}
+		for _, c := range calls {
+			m.ToolCalls = append(m.ToolCalls, newCall(c, nil))
+		}
+		if role == "tool" {
+			m.Name = "run_tests"
+		}
+		return m
+	}
+	start := []chatMessage{msg("system", "S"), msg("user", "task"), msg("assistant", "Running them.", "run_tests"), msg("tool", "OK: 3 tests")}
+	repeat := append(append([]chatMessage{}, start...),
+		msg("assistant", "All 3 tests pass. I added test_a.py.", "run_tests"),
+		msg("tool", "Not run: these tests already passed, and no file has changed since."),
+		msg("assistant", "Done, again.", "run_tests"),
+		msg("tool", "Not run: you were told these tests already passed, and nothing has changed since. You're finished."))
+	got := cutRepeats(repeat)
+	if len(got) != 5 || got[4].Content != "All 3 tests pass. I added test_a.py." || got[4].ToolCalls != nil {
+		t.Fatalf("not cut at the first repeat: %+v", got)
+	}
+	if repeat[4].ToolCalls == nil {
+		t.Fatal("cutting changed the original")
+	}
+	// It changed a file after being told: left alone.
+	later := append(append([]chatMessage{}, repeat[:6]...), msg("assistant", "One more case.", "edit_file"), msg("tool", "Edited"), msg("assistant", "Done."))
+	if got := cutRepeats(later); len(got) != len(later) {
+		t.Fatalf("cut work that came after: %d of %d", len(got), len(later))
+	}
+	if got := cutRepeats(start); len(got) != len(start) {
+		t.Fatal("no repeat, but cut")
+	}
+}
+
+// The PC's export, when it's there: every chat well-formed after the cut.
+func TestCutRepeatsOnARealExport(t *testing.T) {
+	path := os.Getenv("REAL_EXPORT")
+	if path == "" {
+		t.Skip("set REAL_EXPORT to a train.jsonl")
+	}
+	chats := readChats(t, path)
+	cut := 0
+	for _, c := range chats {
+		before := len(c.Messages)
+		msgs := cutRepeats(c.Messages)
+		if len(msgs) < before {
+			cut++
+		}
+		if last := msgs[len(msgs)-1]; last.Role != "assistant" || len(last.ToolCalls) > 0 {
+			t.Errorf("%s ends with %s (%d calls)", c.ID, last.Role, len(last.ToolCalls))
+		}
+		for i := 0; i < len(msgs); i++ {
+			if msgs[i].Role == "tool" {
+				t.Errorf("%s: an unasked tool message at %d", c.ID, i)
+				break
+			}
+			for k := range msgs[i].ToolCalls {
+				if i+1+k >= len(msgs) || msgs[i+1+k].Role != "tool" {
+					t.Errorf("%s: call %d at %d unanswered", c.ID, k, i)
+				}
+			}
+			i += len(msgs[i].ToolCalls)
+		}
+	}
+	t.Logf("%d of %d chats cut", cut, len(chats))
+}
