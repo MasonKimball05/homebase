@@ -110,6 +110,22 @@
       }
     },
     {
+      "name": "daybook-web",
+      "title": "Daybook (read-only)",
+      "dir": "C:\\Users\\Admin\\apps\\daybook-web",
+      "command": "daybook-web.exe",
+      "args": ["-addr", "0.0.0.0:8098", "-data", "C:\\Users\\Admin\\apps\\daybook-web\\data"],
+      "env_file": "C:\\Users\\Admin\\apps\\daybook-web\\daybook-web.env",
+      "url": "http://arkans-pc1:8098/",
+      "health": "http://127.0.0.1:8098/healthz",
+      "autostart": true,
+      "restart_when_unhealthy": true,
+      "source": {
+        "repo_dir": "C:\\Users\\Admin\\projects\\daybook",
+        "build": ["go", "build", "-C", "web", "-trimpath", "-o", "C:\\Users\\Admin\\apps\\daybook-web\\daybook-web.exe", "."]
+      }
+    },
+    {
       "name": "ollama",
       "title": "Ollama (Qwen and other local models)",
       "dir": "C:\\Users\\Admin\\AppData\\Local\\Programs\\Ollama",
